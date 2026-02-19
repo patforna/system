@@ -1,0 +1,39 @@
+[
+  {
+    "key": "cmd+r",
+    "command": "editor.action.startFindReplaceAction"
+  },
+  {
+    "key": "alt+cmd+f",
+    "command": "-editor.action.startFindReplaceAction"
+  },
+  {
+    "key": "shift+cmd+r",
+    "command": "workbench.action.replaceInFiles"
+  },
+  {
+    "key": "shift+cmd+h",
+    "command": "-workbench.action.replaceInFiles"
+  },
+  {
+    "key": "cmd+d",
+    "command": "editor.action.duplicateSelection",
+    "when": "editorTextFocus"
+  },
+  {
+    "key": "shift+cmd+k",
+    "command": "-aipopup.action.modal.generate",
+    "when": "editorFocus && !composerBarIsVisible"
+  },
+  {
+    "key": "alt+enter",
+    "command": "runCommands",
+    "args": {
+      "commands": [
+        "gitlens.openWorkingFile",
+        "workbench.action.moveEditorToFirstGroup"
+      ]
+    },
+    "when": "listFocus && view =~ /^gitlens\\./ || isInDiffEditor"
+  }
+]

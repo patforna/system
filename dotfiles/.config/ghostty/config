@@ -1,0 +1,13 @@
+macos-non-native-fullscreen = true
+macos-option-as-alt = true
+# command = /opt/homebrew/bin/tmux new-session -A -s play
+quit-after-last-window-closed = true
+
+# Shell integration
+shell-integration = detect
+
+# Window padding
+window-padding-color = extend
+
+# OSC 8 hyperlinks
+link-url = true

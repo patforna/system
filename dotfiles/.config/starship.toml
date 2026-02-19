@@ -1,0 +1,20 @@
+[character]
+vimcmd_symbol = '[N](bold green) '
+
+[python]
+disabled = true
+
+[custom.uv_python]
+command = "cat .python-version 2>/dev/null"
+detect_files = [".python-version"]
+format = "via 🐍 $output "
+
+[package]
+disabled = true
+
+[git_status]
+format = '([$all_status$ahead_behind]($style) )'
+
+[cmd_duration]
+min_time = 2000
+format = "[$duration]($style) "

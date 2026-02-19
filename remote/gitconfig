@@ -1,0 +1,52 @@
+[user]
+	name = Patric Fornasier
+	email = patric.fornasier@gmail.com
+
+[pull]
+	rebase = true
+	ff = only
+[rebase]
+	autoStash = true
+[fetch]
+	prune = true
+[init]
+	defaultBranch = main
+[push]
+	default = simple
+	autoSetupRemote = true
+[merge]
+	conflictStyle = zdiff3
+
+[core]
+	editor = nvim
+	excludesfile = ~/.gitignore_global
+	autocrlf = false
+
+[color]
+	ui = auto
+[delta]
+	navigate = true
+	line-numbers = true
+[interactive]
+	diffFilter = delta --color-only
+[pager]
+	diff = delta
+	log = delta
+	reflog = delta
+	show = delta
+
+[alias]
+	st = status -sb
+	lg = log --oneline --graph --decorate
+	co = checkout
+	br = branch
+
+[rerere]
+	enabled = true
+
+[credential "https://github.com"]
+	helper =
+	helper = !/usr/bin/gh auth git-credential
+[credential "https://gist.github.com"]
+	helper =
+	helper = !/usr/bin/gh auth git-credential

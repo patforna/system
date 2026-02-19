@@ -1,0 +1,94 @@
+{
+  // --- UI / Look & Feel ---
+  "workbench.colorTheme": "One Dark Pro",
+  "workbench.activityBar.orientation": "vertical",
+  "editor.fontFamily": "JetBrains Mono",
+  "editor.fontSize": 15,
+  "terminal.integrated.fontSize": 15,
+  "editor.fontLigatures": true,
+  "editor.minimap.enabled": false,
+  "editor.inlayHints.enabled": "off",
+  "editor.largeFileOptimizations": false,
+
+  // --- Explorer / UX ---
+  "explorer.confirmDelete": false,
+  "explorer.confirmDragAndDrop": false,
+  "explorer.excludeGitIgnore": true,
+  "security.workspace.trust.untrustedFiles": "open",
+
+  // --- Files ---
+  "files.autoSave": "off",
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/.DS_Store": true,
+    "**/.git": true,
+    "**/.idea": true,
+    "**/.specstory": true,
+    "**/.venv": true,
+    "**/*_cache": true,
+    "**/*.egg-info": true,
+    "**/*.pyc": true,
+    "**/*.pyo": true
+  },
+  "files.watcherExclude": {
+    "**/dist/**": true
+  },
+
+  // --- Diff Editor ---
+  "diffEditor.ignoreTrimWhitespace": true,
+  "diffEditor.codeLens": true,
+
+  // --- Git / SCM ---
+  "git.openDiffOnClick": true,
+
+  // --- Debugging ---
+  "debug.javascript.autoAttachFilter": "always",
+
+  // --- Language Formatting ---
+  "[javascript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": true
+  },
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": true
+  },
+  "[json]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[html]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[yaml]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[markdown]": {
+    "editor.wordWrap": "bounded",
+    "editor.wordWrapColumn": 80
+  },
+  "[python]": {
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.fixAll": "explicit",
+      "source.organizeImports": "explicit"
+    },
+    "editor.defaultFormatter": "charliermarsh.ruff"
+  },
+
+  // --- ESLint ---
+  "eslint.alwaysShowStatus": true,
+
+  // --- Claude Code (ignored by VS Code if extension not installed) ---
+  "claudeCode.useTerminal": true,
+  "claudeCode.useCtrlEnterToSend": true,
+
+  // --- GitLens ---
+  "gitlens.currentLine.enabled": false,
+  "gitlens.codeLens.authors.enabled": false,
+  "gitlens.codeLens.recentChange.enabled": false,
+  "gitlens.views.commitDetails.files.layout": "list",
+  "git.blame.statusBarItem.enabled": true
+}
