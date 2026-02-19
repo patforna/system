@@ -1,0 +1,5 @@
+personality = "pragmatic"
+model = "gpt-5.3-codex"
+
+[notice.model_migrations]
+"gpt-5.2-codex" = "gpt-5.3-codex"

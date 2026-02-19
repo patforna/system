@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Snapshot the dev droplet and destroy it to stop billing.
+# Usage: dev-down
+
+DROPLET_NAME="dev"
+SNAPSHOT_NAME="dev-snapshot"
+
+# --- Preflight ---
+if ! command -v doctl &>/dev/null; then
+  echo "doctl not installed. Run: brew install doctl && doctl auth init"
+  exit 1
+fi
+
+DROPLET_ID=$(doctl compute droplet list "$DROPLET_NAME" --format ID --no-header)
+if [[ -z "$DROPLET_ID" ]]; then
+  echo "No droplet named '$DROPLET_NAME' found. Already snapshotted?"
+  exit 1
+fi
+
+echo "Droplet: $DROPLET_NAME (ID: $DROPLET_ID)"
+
+# --- Uptime & cost ---
+DROPLET_JSON=$(doctl compute droplet get "$DROPLET_ID" --output json)
+CREATED_AT=$(echo "$DROPLET_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['created_at'])")
+SIZE_SLUG=$(echo "$DROPLET_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['size_slug'])")
+HOURLY_RATE=$(doctl compute size list --format Slug,PriceHourly --no-header | awk -v s="$SIZE_SLUG" '$1==s {print $2}')
+
+CREATED_EPOCH=$(date -jf "%Y-%m-%dT%H:%M:%SZ" "$CREATED_AT" +%s 2>/dev/null || date -d "$CREATED_AT" +%s)
+NOW_EPOCH=$(date +%s)
+UPTIME_SECS=$((NOW_EPOCH - CREATED_EPOCH))
+UPTIME_HOURS=$((UPTIME_SECS / 3600))
+UPTIME_MINS=$(( (UPTIME_SECS % 3600) / 60 ))
+COST=$(python3 -c "
+h, r = int('$UPTIME_HOURS'), float('$HOURLY_RATE')
+billable = h + 1
+print(f'{billable}h × \${r} = \${billable * r:.2f}')
+")
+
+echo "Uptime:  ${UPTIME_HOURS}h ${UPTIME_MINS}m"
+echo "Cost:    $COST (billed hourly)"
+echo ""
+
+# --- Clean up any previous snapshot ---
+OLD_SNAP=$(doctl compute snapshot list "$SNAPSHOT_NAME" --resource droplet --format ID --no-header 2>/dev/null || true)
+if [[ -n "$OLD_SNAP" ]]; then
+  echo "Deleting previous snapshot ($OLD_SNAP)..."
+  doctl compute snapshot delete "$OLD_SNAP" --force
+fi
+
+# --- Shutdown ---
+echo "Shutting down droplet..."
+doctl compute droplet-action shutdown "$DROPLET_ID" --wait
+
+# --- Snapshot ---
+echo "Creating snapshot '$SNAPSHOT_NAME' (this takes a few minutes)..."
+doctl compute droplet-action snapshot "$DROPLET_ID" --snapshot-name "$SNAPSHOT_NAME" --wait
+
+SNAPSHOT_ID=$(doctl compute snapshot list "$SNAPSHOT_NAME" --resource droplet --format ID --no-header)
+echo "Snapshot created (ID: $SNAPSHOT_ID)"
+
+# --- Destroy ---
+echo "Destroying droplet..."
+doctl compute droplet delete "$DROPLET_ID" --force
+
+echo ""
+echo "Done. Droplet destroyed, snapshot saved."
+echo "Restore with: dev-up"

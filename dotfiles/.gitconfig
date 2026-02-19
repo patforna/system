@@ -1,0 +1,67 @@
+[user]
+	name = Patric Fornasier
+	email = the configured Gmail account
+
+# --- Workflow defaults ---
+[pull]
+	rebase = true
+	ff = only
+[rebase]
+	autoStash = true
+[fetch]
+	prune = true
+[init]
+	defaultBranch = main
+[push]
+	default = simple
+	autoSetupRemote = true
+[merge]
+	conflictStyle = zdiff3
+
+# --- Editor & ignore ---
+[core]
+	editor = nvim
+	excludesfile = ~/.gitignore_global
+	autocrlf = false
+
+# --- Colors & pager (delta) ---
+[color]
+	ui = auto
+[delta]
+	navigate = true       # jump between hunks with n/N
+	line-numbers = true
+[interactive]
+	diffFilter = delta --color-only
+[pager]
+	diff = delta
+	log = delta
+	reflog = delta
+	show = delta
+
+# --- Helpful quality-of-life ---
+[alias]
+	st = status -sb       # short + branch/ahead-behind
+	lg = log --oneline --graph --decorate
+	co = checkout
+	br = branch
+
+# --- Rerere keeps conflict resolutions for reuse ---
+[rerere]
+	enabled = true
+
+# --- Credentials (macOS keychain) ---
+[credential]
+	helper = osxkeychain
+
+# --- LFS (keep as-is if you use it) ---
+[filter "lfs"]
+	required = true
+	clean = git-lfs clean -- %f
+	smudge = git-lfs smudge -- %f
+	process = git-lfs filter-process
+
+# --- (optional) signing ---
+# [commit]
+# 	gpgsign = true
+# [gpg]
+# 	program = gpg

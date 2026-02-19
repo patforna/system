@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Restore the dev droplet from snapshot.
+# Usage: dev-up
+
+DROPLET_NAME="dev"
+SNAPSHOT_NAME="dev-snapshot"
+REGION="lon1"
+SIZE="s-2vcpu-4gb"
+SSH_KEYS="2254142"             # your DO SSH key ID — find it: doctl compute ssh-key list
+SSH_CONFIG_LOCAL="$HOME/Drive/system/ssh-config.local"  # private, not in repo
+
+# --- Preflight ---
+if ! command -v doctl &>/dev/null; then
+  echo "doctl not installed. Run: brew install doctl && doctl auth init"
+  exit 1
+fi
+
+EXISTING=$(doctl compute droplet list "$DROPLET_NAME" --format ID --no-header 2>/dev/null || true)
+if [[ -n "$EXISTING" ]]; then
+  echo "Droplet '$DROPLET_NAME' already exists (ID: $EXISTING). Nothing to do."
+  exit 0
+fi
+
+SNAPSHOT_ID=$(doctl compute snapshot list "$SNAPSHOT_NAME" --resource droplet --format ID --no-header 2>/dev/null || true)
+if [[ -z "$SNAPSHOT_ID" ]]; then
+  echo "No snapshot named '$SNAPSHOT_NAME' found. Nothing to restore from."
+  exit 1
+fi
+
+echo "Restoring from snapshot: $SNAPSHOT_NAME (ID: $SNAPSHOT_ID)"
+
+# --- Create droplet ---
+echo "Creating droplet (this takes about a minute)..."
+doctl compute droplet create "$DROPLET_NAME" \
+  --image "$SNAPSHOT_ID" \
+  --size "$SIZE" \
+  --region "$REGION" \
+  --ssh-keys "$SSH_KEYS" \
+  --wait
+
+# --- Get new IP ---
+NEW_IP=$(doctl compute droplet list "$DROPLET_NAME" --format PublicIPv4 --no-header)
+echo "New IP: $NEW_IP"
+
+# --- Update SSH config ---
+echo "Host dev" > "$SSH_CONFIG_LOCAL"
+echo "  HostName $NEW_IP" >> "$SSH_CONFIG_LOCAL"
+echo "Updated $SSH_CONFIG_LOCAL"
+
+# --- Delete snapshot ---
+echo "Deleting snapshot..."
+doctl compute snapshot delete "$SNAPSHOT_ID" --force
+
+# --- Clear old host key ---
+ssh-keygen -R "$NEW_IP" 2>/dev/null || true
+
+echo ""
+echo "Done. Connect with: dev"

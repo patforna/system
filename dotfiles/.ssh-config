@@ -1,0 +1,12 @@
+Include config.local
+
+Host dev
+  User patric
+  ForwardAgent yes
+  ServerAliveInterval 60
+  ServerAliveCountMax 3
+
+Host *
+  AddKeysToAgent yes
+  UseKeychain yes
+  IdentityFile ~/.ssh/id_ed25519
