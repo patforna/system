@@ -160,8 +160,10 @@ if [[ ! -d "$TPM_DIR" ]]; then
 else
   echo "  SKIP  tpm"
 fi
-# Install plugins (works without a running tmux server)
-"$TPM_DIR/bin/install_plugins"
+# Install plugins — needs a tmux server with TMUX_PLUGIN_MANAGER_PATH set
+tmux start-server 2>/dev/null || true
+tmux set-environment -g TMUX_PLUGIN_MANAGER_PATH "$HOME/.tmux/plugins/" 2>/dev/null || true
+"$TPM_DIR/bin/install_plugins" || echo "  WARN  TPM install failed (will install on first tmux start)"
 echo ""
 
 # --- Default shell ---
@@ -195,6 +197,7 @@ link "$REPO_DIR/dotfiles/.config/nvim/lazy-lock.json" "$HOME/.config/nvim/lazy-l
 link "$REPO_DIR/dotfiles/.config/btop/btop.conf"      "$HOME/.config/btop/btop.conf"
 link "$REPO_DIR/dotfiles/.config/gh/config.yml"       "$HOME/.config/gh/config.yml"
 link "$REPO_DIR/dotfiles/.config/git/ignore"          "$HOME/.config/git/ignore"
+link "$REPO_DIR/dotfiles/.config/fd/config"           "$HOME/.config/fd/config"
 
 # Claude Code
 mkdir -p "$HOME/.claude/projects"
