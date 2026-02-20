@@ -35,5 +35,15 @@
       ]
     },
     "when": "listFocus && view =~ /^gitlens\\./ || isInDiffEditor"
+  },
+  {
+    "key": "ctrl+l",
+    "command": "qishan233.copy.relative.path.line",
+    "when": "editorTextFocus"
+  },
+  {
+    "key": "ctrl+l",
+    "command": "-expandLineSelection",
+    "when": "textInputFocus"
   }
 ]
