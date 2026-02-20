@@ -55,15 +55,23 @@ echo '<username> ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers.d/<username>
 exit
 ```
 
-### 4. Copy repo and bootstrap
+### 4. Bootstrap
+
+From your Mac — install the Ghostty terminfo so the remote knows about your terminal:
 
 ```bash
-scp -r ~/github/system dev:~/system
 infocmp -x xterm-ghostty | ssh dev 'tic -x -'
+```
+
+Then SSH in and clone + bootstrap:
+
+```bash
 ssh dev
-bash ~/system/remote/bootstrap.sh
+git clone https://github.com/patforna/system.git ~/github/system
+bash ~/github/system/remote/bootstrap.sh
 exec zsh
 gh auth login
+cd ~/github/system && git remote set-url origin git@github.com:patforna/system.git
 claude login
 atuin login && atuin sync
 ```
