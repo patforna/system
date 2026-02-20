@@ -23,8 +23,20 @@ echo "Droplet: $DROPLET_NAME (ID: $DROPLET_ID)"
 
 # --- Uptime & cost ---
 DROPLET_JSON=$(doctl compute droplet get "$DROPLET_ID" --output json)
-CREATED_AT=$(echo "$DROPLET_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['created_at'])")
 SIZE_SLUG=$(echo "$DROPLET_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['size_slug'])")
+
+# Use the 'create' action timestamp (when dev-up restored this instance),
+# not the droplet's created_at which can reflect stale snapshot metadata.
+CREATED_AT=$(doctl compute droplet-action list "$DROPLET_ID" --output json \
+  | python3 -c "
+import sys, json
+actions = json.load(sys.stdin)
+create = next((a for a in actions if a['type'] == 'create'), None)
+print(create['started_at'] if create else '')
+")
+if [[ -z "$CREATED_AT" ]]; then
+  CREATED_AT=$(echo "$DROPLET_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['created_at'])")
+fi
 HOURLY_RATE=$(doctl compute size list --format Slug,PriceHourly --no-header | awk -v s="$SIZE_SLUG" '$1==s {print $2}')
 
 CREATED_EPOCH=$(date -jf "%Y-%m-%dT%H:%M:%SZ" "$CREATED_AT" +%s 2>/dev/null || date -d "$CREATED_AT" +%s)
