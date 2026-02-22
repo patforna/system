@@ -10,6 +10,8 @@ remote/
 └── gitconfig      # Linux-adapted git config
 ```
 
+The `dev-up` and `dev-down` scripts for managing the droplet lifecycle live in `scripts/` at the repo root (see [Spin down / up](#spin-down--up)).
+
 ## Differences from Mac configs
 
 **zshrc** — No Homebrew paths, no pbcopy/pbpaste. Plugin paths point to `/usr/share/` (Ubuntu apt).
@@ -68,10 +70,9 @@ Then SSH in and clone + bootstrap:
 ```bash
 ssh dev
 git clone https://github.com/patforna/system.git ~/github/system
-bash ~/github/system/remote/bootstrap.sh
+~/github/system/remote/bootstrap.sh
 exec zsh
 gh auth login
-cd ~/github/system && git remote set-url origin git@github.com:patforna/system.git
 claude login
 atuin login && atuin sync
 ```
@@ -90,11 +91,15 @@ dev
 
 ### Spin down / up
 
-Snapshot and destroy the droplet to stop billing, restore when needed. Requires `doctl` (`brew install doctl && doctl auth init`).
+The droplet bills hourly, so snapshot and destroy it when you're not using it. Two scripts in `scripts/` handle the lifecycle (requires `doctl`: `brew install doctl && doctl auth init`):
+
+**`dev-down`** — Shuts down the droplet, creates a snapshot (`dev-snapshot`), then destroys the droplet. Shows uptime and cost before tearing down.
+
+**`dev-up`** — Restores a new droplet from the snapshot, updates `~/Drive/system/ssh-config.local` with the new IP, deletes the snapshot, and clears the old SSH host key.
 
 ```bash
-dev-down   # snapshot + destroy
-dev-up     # restore from snapshot + update SSH config
+dev-down   # done for the day — snapshot + destroy
+dev-up     # back to work — restore from snapshot
 ```
 
 ### Cursor Remote SSH
