@@ -87,6 +87,7 @@ known_manual_apps=(
 
 # Apps installed by brew casks:
 known_cask_apps=(
+  "calibre.app"
   "ChatGPT.app"
   "Claude.app"
   "CleanShot X.app"
