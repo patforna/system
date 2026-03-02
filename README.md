@@ -7,7 +7,6 @@ dotfiles/              # config files, symlinked into $HOME
 scripts/               # bootstrap, dotfile linker, drift checker, utilities
 remote/                # Ubuntu droplet setup (separate bootstrap + configs)
 Brewfile               # brew packages, casks, VS Code extensions
-com.patric.drift-check.plist  # weekly launchd job
 ```
 
 ## Stack
@@ -86,6 +85,7 @@ Drift detection runs weekly via launchd (Mondays 10 AM) and sends a macOS notifi
 Some files are machine-local and not in this repo:
 
 - `~/.ssh/config.local` — droplet IP (written by `dev-up`)
+- `com.patric.drift-check.plist` — weekly launchd job for drift detection
 - `~/.claude/skills/` — Claude Code skill definitions
 - `~/.claude/settings.json` — generated per-machine by bootstrap
 
