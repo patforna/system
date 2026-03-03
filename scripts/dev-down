@@ -27,7 +27,7 @@ SIZE_SLUG=$(echo "$DROPLET_JSON" | python3 -c "import sys,json; print(json.load(
 
 # Use the 'create' action timestamp (when dev-up restored this instance),
 # not the droplet's created_at which can reflect stale snapshot metadata.
-CREATED_AT=$(doctl compute droplet-action list "$DROPLET_ID" --output json \
+CREATED_AT=$(doctl compute droplet actions "$DROPLET_ID" --output json \
   | python3 -c "
 import sys, json
 actions = json.load(sys.stdin)

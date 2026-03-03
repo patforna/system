@@ -99,7 +99,7 @@ echo ""
 
 # --- Drift Check (weekly launchd job) ---
 echo "--- Drift Check ---"
-PLIST_SRC="${HOME}/github/system/com.patric.drift-check.plist"
+PLIST_SRC="${HOME}/Drive/system/com.patric.drift-check.plist"
 PLIST_DEST="${HOME}/Library/LaunchAgents/com.patric.drift-check.plist"
 if [[ -f "$PLIST_SRC" ]]; then
   mkdir -p "${HOME}/Library/LaunchAgents"
@@ -109,6 +109,21 @@ if [[ -f "$PLIST_SRC" ]]; then
   echo "  OK    drift-check runs weekly (Mondays 10 AM)"
 else
   echo "  SKIP  $PLIST_SRC not found"
+fi
+echo ""
+
+# --- Droplet Watchdog (every 4 hours) ---
+echo "--- Droplet Watchdog ---"
+WATCHDOG_SRC="${HOME}/Drive/system/com.patric.droplet-watchdog.plist"
+WATCHDOG_DEST="${HOME}/Library/LaunchAgents/com.patric.droplet-watchdog.plist"
+if [[ -f "$WATCHDOG_SRC" ]]; then
+  mkdir -p "${HOME}/Library/LaunchAgents"
+  cp "$WATCHDOG_SRC" "$WATCHDOG_DEST"
+  launchctl bootout "gui/$(id -u)" "$WATCHDOG_DEST" 2>/dev/null || true
+  launchctl bootstrap "gui/$(id -u)" "$WATCHDOG_DEST"
+  echo "  OK    droplet-watchdog runs every 4 hours"
+else
+  echo "  SKIP  $WATCHDOG_SRC not found"
 fi
 echo ""
 
