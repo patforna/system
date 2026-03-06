@@ -3,6 +3,7 @@ export PATH="/opt/homebrew/bin:$PATH" # homebrew
 export PATH="$HOME/.local/bin:$PATH" # claude code
 export PATH="$HOME/github/system/scripts:$PATH"
 export PATH="$HOME/Drive/system/scripts:$PATH" # private scripts (not in repo)
+export PATH="/opt/homebrew/opt/trash/bin:$PATH" # trash (keg-only)
 
 # --- History ---
 HISTFILE=~/.zsh_history
@@ -52,6 +53,7 @@ alias pbc=pbcopy
 alias pbp=pbpaste
 alias cat='bat'
 alias l=less
+alias rm='trash'              # move to macOS Trash instead of deleting (\rm for real rm)
 alias rg='rg --hidden --smart-case'
 alias g='rg'
 alias grep='rg'
