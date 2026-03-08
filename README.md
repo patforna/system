@@ -53,6 +53,7 @@ See [`remote/README.md`](remote/README.md) for the full playbook.
 | Claude Code    | `.claude/CLAUDE.md`, `statusline-command.sh`          |
 | Codex          | `.codex/config.toml`                                  |
 | Packages       | `Brewfile`                                            |
+| File assocs    | `scripts/file-associations.conf`                      |
 
 Only config files are symlinked — never caches, auth tokens, or session data.
 
@@ -79,6 +80,7 @@ Drift detection runs weekly via launchd (Mondays 10 AM) and sends a macOS notifi
 - VS Code extensions vs Brewfile
 - All dotfile symlinks
 - New unmanaged directories in `~/.config/`
+- File associations vs `scripts/file-associations.conf`
 
 ## Private files
 
