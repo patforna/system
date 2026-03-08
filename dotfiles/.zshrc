@@ -129,6 +129,7 @@ alias dev='ssh dev -t "tmux new-session -A -s main"'
 # --- Misc ---
 export EDITOR="nvim"
 export CLAUDE_CODE_MAX_OUTPUT_TOKENS=64000
+export GOG_ACCOUNT=the configured Gmail account
 
 
 # Added for claude code github plugin

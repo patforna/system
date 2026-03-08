@@ -81,14 +81,18 @@
   // --- ESLint ---
   "eslint.alwaysShowStatus": true,
 
-  // --- Claude Code (ignored by VS Code if extension not installed) ---
-  "claudeCode.useTerminal": true,
-  "claudeCode.useCtrlEnterToSend": true,
-
   // --- GitLens ---
   "gitlens.currentLine.enabled": false,
   "gitlens.codeLens.authors.enabled": false,
   "gitlens.codeLens.recentChange.enabled": false,
   "gitlens.views.commitDetails.files.layout": "list",
-  "git.blame.statusBarItem.enabled": true
+  "git.blame.statusBarItem.enabled": false,
+  "claudeCode.preferredLocation": "panel",
+  "claudeCode.disableLoginPrompt": true,
+  "claudeCode.allowDangerouslySkipPermissions": true,
+  "claudeCode.hideOnboarding": true,
+  "claudeCode.initialPermissionMode": "bypassPermissions",
+  "claudeCode.usePythonEnvironment": false,
+  "claudeCode.useTerminal": true,
+  "git.blame.editorDecoration.enabled": false
 }

@@ -5,7 +5,7 @@ set -uo pipefail
 # tracked in the Brewfile, dotfiles, or README.
 #
 # Exit 0 = no drift, exit 1 = drift detected.
-# When run via launchd, sends a macOS notification on drift.
+# When run via launchd (or with --notify), sends an email summary.
 
 BREWFILE="${HOME}/github/system/Brewfile"
 DOTFILES="${HOME}/github/system/dotfiles"
@@ -232,21 +232,29 @@ fi
 # --- Summary ---
 echo ""
 echo "=============================="
+NOTIFY=${1:-}
+NOTIFY_EMAIL="the configured Gmail account"
+
 notify() {
-  if [[ -z "${TERM:-}" ]] || [[ "${1:-}" == "--notify" ]]; then
-    osascript -e "display notification \"$1\" with title \"System Drift Check\"" 2>/dev/null || true
+  local subject="$1" body="$2"
+  if [[ -z "${TERM:-}" ]] || [[ "$NOTIFY" == "--notify" ]]; then
+    if command -v gog &>/dev/null; then
+      gog gmail send --to "$NOTIFY_EMAIL" --subject "$subject" --body="$body" --force 2>/dev/null || true
+    fi
   fi
 }
 
 if [[ ${#DRIFT[@]} -eq 0 ]]; then
   echo "No drift detected."
-  notify "No drift detected."
+  notify "Drift Check: all clear" "No drift detected."
   exit 0
 else
   echo "${#DRIFT[@]} issue(s) found:"
+  body=""
   for d in "${DRIFT[@]}"; do
     echo "  - $d"
+    body+="- $d"$'\n'
   done
-  notify "${#DRIFT[@]} issue(s) found. Run drift-check.sh to see details."
+  notify "Drift Check: ${#DRIFT[@]} issue(s)" "$body"
   exit 1
 fi
