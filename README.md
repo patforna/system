@@ -73,7 +73,7 @@ drift-check.sh
 /remote-drift
 ```
 
-Drift detection runs weekly via launchd (Mondays 10 AM) and sends a macOS notification if anything is out of sync. It checks:
+Drift detection runs weekly via launchd (Mondays 10 AM) and sends an email summary via `gog`. It checks:
 
 - Brew formulae/casks vs Brewfile
 - `/Applications/` vs known apps

@@ -129,6 +129,7 @@ alias dev='ssh dev -t "tmux new-session -A -s main"'
 # --- Misc ---
 export EDITOR="nvim"
 export CLAUDE_CODE_MAX_OUTPUT_TOKENS=64000
+export GOG_ACCOUNT=patric.fornasier@gmail.com
 
 
 # Added for claude code github plugin
