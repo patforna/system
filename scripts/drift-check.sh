@@ -183,6 +183,25 @@ if [[ "$symlink_drifts" -eq 0 ]]; then
   ok "all symlinks intact"
 fi
 
+# --- File associations ---
+section "File associations"
+if command -v duti &>/dev/null; then
+  assoc_file="${HOME}/github/system/scripts/file-associations.conf"
+  assoc_drift_count=${#DRIFT[@]}
+  while IFS=' ' read -r ext expected_bundle; do
+    [[ -z "$ext" || "$ext" == \#* ]] && continue
+    actual_bundle=$(duti -x "${ext#.}" 2>/dev/null | tail -1)
+    if [[ "$actual_bundle" != "$expected_bundle" ]]; then
+      drift "extension '$ext' handled by '$actual_bundle', expected '$expected_bundle'"
+    fi
+  done < "$assoc_file"
+  if [[ ${#DRIFT[@]} -eq $assoc_drift_count ]]; then
+    ok "file associations match"
+  fi
+else
+  ok "duti not installed (skipping file association check)"
+fi
+
 # --- New config directories ---
 section "New config directories"
 known_config_dirs=(

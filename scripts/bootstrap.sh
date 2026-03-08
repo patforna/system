@@ -67,6 +67,11 @@ if command -v duti &>/dev/null; then
   duti -s com.microsoft.VSCode public.plain-text all 2>/dev/null || true
   duti -s com.microsoft.VSCode public.text all 2>/dev/null || true
   duti -s com.microsoft.VSCode public.source-code all 2>/dev/null || true
+  # Per-extension overrides (some apps like Calibre claim specific extensions)
+  while IFS=' ' read -r ext bundle_id; do
+    [[ -z "$ext" || "$ext" == \#* ]] && continue
+    duti -s "$bundle_id" "$ext" all 2>/dev/null || true
+  done < "${HOME}/github/system/scripts/file-associations.conf"
 fi
 echo "  OK"
 echo ""
