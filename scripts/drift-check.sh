@@ -232,19 +232,21 @@ fi
 # --- Summary ---
 echo ""
 echo "=============================="
+notify() {
+  if [[ -z "${TERM:-}" ]] || [[ "${1:-}" == "--notify" ]]; then
+    osascript -e "display notification \"$1\" with title \"System Drift Check\"" 2>/dev/null || true
+  fi
+}
+
 if [[ ${#DRIFT[@]} -eq 0 ]]; then
   echo "No drift detected."
+  notify "No drift detected."
   exit 0
 else
   echo "${#DRIFT[@]} issue(s) found:"
   for d in "${DRIFT[@]}"; do
     echo "  - $d"
   done
-
-  # macOS notification (useful when run via launchd)
-  if [[ -z "${TERM:-}" ]] || [[ "${1:-}" == "--notify" ]]; then
-    osascript -e "display notification \"${#DRIFT[@]} issue(s) found. Run drift-check.sh to see details.\" with title \"System Drift Check\"" 2>/dev/null || true
-  fi
-
+  notify "${#DRIFT[@]} issue(s) found. Run drift-check.sh to see details."
   exit 1
 fi
