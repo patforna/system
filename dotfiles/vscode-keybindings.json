@@ -21,11 +21,6 @@
     "when": "editorTextFocus"
   },
   {
-    "key": "shift+cmd+k",
-    "command": "-aipopup.action.modal.generate",
-    "when": "editorFocus && !composerBarIsVisible"
-  },
-  {
     "key": "alt+enter",
     "command": "runCommands",
     "args": {

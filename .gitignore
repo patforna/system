@@ -1,1 +1,8 @@
 .DS_Store
+
+# Dagu runtime artifacts
+dagu/.dag.index
+dagu/skills/
+dagu/souls/
+dagu/memory/
+dagu/docs/
