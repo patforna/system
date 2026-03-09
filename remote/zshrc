@@ -115,13 +115,7 @@ ZSH_AUTOSUGGEST_STRATEGY=(history completion)
 source /usr/share/zsh-autosuggestions/zsh-autosuggestions.zsh
 source /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
 
-# TAB: accept autosuggestion if visible, otherwise fall through to fzf/completion
-_tab_accept_or_complete() {
-  if (( ${#POSTDISPLAY} )); then
-    zle autosuggest-accept
-  else
-    zle fzf-completion
-  fi
-}
-zle -N _tab_accept_or_complete
-bindkey '^I' _tab_accept_or_complete
+# TAB: fzf-enhanced completion (expands unambiguously, fuzzy picks when multiple matches).
+# Bound explicitly because vi mode leaves ^I unbound, which breaks fzf's fallback.
+# Autosuggestions are accepted with right-arrow (zsh-autosuggestions default).
+bindkey '^I' fzf-completion
