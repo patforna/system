@@ -1,4 +1,4 @@
-schedule: "0 10 * * 1"
+schedule: "0 10 * * *"
 
 steps:
   - name: drift-check

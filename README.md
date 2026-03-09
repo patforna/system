@@ -5,6 +5,7 @@ Mac + remote dev environment, fully automated. One script to bootstrap a new Mac
 ```
 dotfiles/              # config files, symlinked into $HOME
 scripts/               # bootstrap, dotfile linker, drift checker, utilities
+dagu/                  # scheduled workflow definitions (drift check, watchdog)
 remote/                # Ubuntu droplet setup (separate bootstrap + configs)
 Brewfile               # brew packages, casks, VS Code extensions
 ```
@@ -29,7 +30,7 @@ Brewfile               # brew packages, casks, VS Code extensions
 ~/github/system/scripts/bootstrap.sh
 ```
 
-Installs Homebrew, all packages from the Brewfile, Claude Code, symlinks dotfiles, configures macOS defaults, and schedules weekly drift checks.
+Installs Homebrew, all packages from the Brewfile, Claude Code, symlinks dotfiles, configures macOS defaults, and starts Dagu for scheduled workflows.
 
 ### Remote droplet
 
@@ -73,7 +74,14 @@ drift-check.sh
 /remote-drift
 ```
 
-Drift detection runs weekly via launchd (Mondays 10 AM) and sends an email summary via `gog`. It checks:
+Scheduled workflows run via [Dagu](https://github.com/dagu-org/dagu) (`brew services start dagu`, web UI at `localhost:8080`). DAG definitions live in `dagu/` and are symlinked to `~/.config/dagu/dags`.
+
+| Workflow           | Schedule        | Description                                      |
+|--------------------|-----------------|--------------------------------------------------|
+| drift-check        | Daily 10:00     | Detects untracked system changes, files GH issues |
+| droplet-watchdog   | Every 4 hours   | Alerts if dev droplet runs longer than 24h       |
+
+Drift detection checks:
 
 - Brew formulae/casks vs Brewfile
 - `/Applications/` vs known apps
@@ -87,7 +95,6 @@ Drift detection runs weekly via launchd (Mondays 10 AM) and sends an email summa
 Some files are machine-local and not in this repo:
 
 - `~/.ssh/config.local` — droplet IP (written by `dev-up`)
-- `com.patric.drift-check.plist` — weekly launchd job for drift detection
 - `~/.claude/skills/` — Claude Code skill definitions
 - `~/.claude/settings.json` — generated per-machine by bootstrap
 
