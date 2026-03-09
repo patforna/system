@@ -5,7 +5,7 @@ set -uo pipefail
 # tracked in the Brewfile, dotfiles, or README.
 #
 # Exit 0 = no drift, exit 1 = drift detected.
-# When run via launchd (or with --notify), sends an email summary.
+# When run via Dagu (or with --notify), sends an email summary.
 
 BREWFILE="${HOME}/github/system/Brewfile"
 DOTFILES="${HOME}/github/system/dotfiles"
@@ -71,41 +71,13 @@ fi
 # --- /Applications ---
 section "Applications"
 
-# Apps expected to exist: brew casks + manual prerequisites + system apps
-# Manually-installed apps that are known and intentional:
-known_manual_apps=(
-  "1Password.app"
-  "Amphetamine.app"
-  "Google Docs.app"
-  "Google Drive.app"
-  "Google Sheets.app"
-  "Google Slides.app"
-  "Conductor.app"
-  "GitHub Desktop.app"
-  "Pixelmator Pro.app"
-  "PyCharm.app"
-  "Safari.app"
-  "Utilities"
-)
-
-# Apps installed by brew casks:
-known_cask_apps=(
-  "calibre.app"
-  "ChatGPT.app"
-  "Claude.app"
-  "CleanShot X.app"
-  "Codex.app"
-"Ghostty.app"
-  "Google Chrome.app"
-  "Rectangle.app"
-  "Slack.app"
-  "Transmission.app"
-  "Visual Studio Code.app"
-  "VLC.app"
-  "Wispr Flow.app"
-)
-
-all_known=("${known_manual_apps[@]}" "${known_cask_apps[@]}")
+# Known apps loaded from external file (one app per line, # comments ignored)
+KNOWN_APPS_FILE="${HOME}/github/system/scripts/known-apps.conf"
+all_known=()
+while IFS= read -r line; do
+  [[ -z "$line" || "$line" == \#* ]] && continue
+  all_known+=("$line")
+done < "$KNOWN_APPS_FILE"
 
 while IFS= read -r app; do
   [[ -z "$app" ]] && continue
@@ -203,12 +175,30 @@ else
   ok "duti not installed (skipping file association check)"
 fi
 
+# --- Standalone binaries (not managed by Homebrew) ---
+section "Standalone binaries"
+standalone_bins=(claude msgvault)
+bin_drift_count=${#DRIFT[@]}
+
+for bin in "${standalone_bins[@]}"; do
+  if ! command -v "$bin" &>/dev/null; then
+    drift "'$bin' not installed (expected in PATH)"
+  fi
+done
+
+if [[ ${#DRIFT[@]} -eq $bin_drift_count ]]; then
+  ok "all standalone binaries present"
+fi
+
 # --- New config directories ---
 section "New config directories"
-known_config_dirs=(
-  ghostty nvim starship.toml atuin btop gh git fd dagu  # managed in dotfiles
-  configstore yarn op                              # ephemeral / not worth managing
-)
+# Known config dirs loaded from external file
+KNOWN_CONFIG_FILE="${HOME}/github/system/scripts/known-config-dirs.conf"
+known_config_dirs=()
+while IFS= read -r line; do
+  [[ -z "$line" || "$line" == \#* ]] && continue
+  known_config_dirs+=("$line")
+done < "$KNOWN_CONFIG_FILE"
 
 config_drift_count=${#DRIFT[@]}
 while IFS= read -r dir; do

@@ -5,7 +5,7 @@ set -uo pipefail
 # Sends an email via Mail.app and a macOS notification.
 #
 # Usage: droplet-watchdog.sh
-# Designed to run via launchd every 4 hours.
+# Designed to run via Dagu every 4 hours.
 
 DROPLET_NAME="dev"
 ALERT_AFTER_HOURS=24
@@ -60,15 +60,15 @@ UPTIME_REM=$(( UPTIME_HOURS % 24 ))
 # --- Send macOS notification ---
 osascript -e "display notification \"Dev droplet running for ${UPTIME_DAYS}d ${UPTIME_REM}h. Run dev-down to stop billing.\" with title \"Droplet Watchdog\"" 2>/dev/null || true
 
-# --- Send email via Mail.app ---
-osascript <<EOF 2>/dev/null || true
-tell application "Mail"
-  set msg to make new outgoing message with properties {subject:"Dev droplet running for ${UPTIME_DAYS}d ${UPTIME_REM}h", content:"Your DigitalOcean dev droplet has been running for ${UPTIME_DAYS} days and ${UPTIME_REM} hours.
+# --- Send email via gog ---
+if command -v gog &>/dev/null; then
+  gog gmail send \
+    --to "$NOTIFY_EMAIL" \
+    --subject "Dev droplet running for ${UPTIME_DAYS}d ${UPTIME_REM}h" \
+    --body "Your DigitalOcean dev droplet has been running for ${UPTIME_DAYS} days and ${UPTIME_REM} hours.
 
 Run dev-down to snapshot and destroy it.
 
-— droplet-watchdog", visible:false}
-  tell msg to make new to recipient at end of to recipients with properties {address:"${NOTIFY_EMAIL}"}
-  send msg
-end tell
-EOF
+— droplet-watchdog" \
+    --force 2>/dev/null || true
+fi
