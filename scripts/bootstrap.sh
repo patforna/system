@@ -27,6 +27,15 @@ else
 fi
 echo ""
 
+# --- msgvault ---
+if ! command -v msgvault &>/dev/null; then
+  echo "--- Installing msgvault ---"
+  curl -fsSL https://msgvault.io/install.sh | bash
+else
+  echo "--- msgvault: already installed ---"
+fi
+echo ""
+
 # --- Dotfiles ---
 echo "--- Linking dotfiles ---"
 bash "${HOME}/github/system/scripts/dot_files.sh"
@@ -90,33 +99,17 @@ SETTINGS
 echo "  OK    ~/.claude/settings.json"
 echo ""
 
-# --- Drift Check (weekly launchd job) ---
-echo "--- Drift Check ---"
-PLIST_SRC="${HOME}/Drive/system/com.patric.drift-check.plist"
-PLIST_DEST="${HOME}/Library/LaunchAgents/com.patric.drift-check.plist"
-if [[ -f "$PLIST_SRC" ]]; then
-  mkdir -p "${HOME}/Library/LaunchAgents"
-  cp "$PLIST_SRC" "$PLIST_DEST"
-  launchctl bootout "gui/$(id -u)" "$PLIST_DEST" 2>/dev/null || true
-  launchctl bootstrap "gui/$(id -u)" "$PLIST_DEST"
-  echo "  OK    drift-check runs weekly (Mondays 10 AM)"
+# --- Dagu Scheduler ---
+echo "--- Dagu Scheduler ---"
+if command -v dagu &>/dev/null; then
+  if pgrep -qf "dagu start-all"; then
+    echo "  OK    dagu scheduler already running"
+  else
+    echo "  NOTE  Start Dagu with: dagu start-all"
+  fi
+  echo "  Workflows: drift-check, droplet-watchdog"
 else
-  echo "  SKIP  $PLIST_SRC not found"
-fi
-echo ""
-
-# --- Droplet Watchdog (every 4 hours) ---
-echo "--- Droplet Watchdog ---"
-WATCHDOG_SRC="${HOME}/Drive/system/com.patric.droplet-watchdog.plist"
-WATCHDOG_DEST="${HOME}/Library/LaunchAgents/com.patric.droplet-watchdog.plist"
-if [[ -f "$WATCHDOG_SRC" ]]; then
-  mkdir -p "${HOME}/Library/LaunchAgents"
-  cp "$WATCHDOG_SRC" "$WATCHDOG_DEST"
-  launchctl bootout "gui/$(id -u)" "$WATCHDOG_DEST" 2>/dev/null || true
-  launchctl bootstrap "gui/$(id -u)" "$WATCHDOG_DEST"
-  echo "  OK    droplet-watchdog runs every 4 hours"
-else
-  echo "  SKIP  $WATCHDOG_SRC not found"
+  echo "  SKIP  dagu not installed (check Brewfile)"
 fi
 echo ""
 
