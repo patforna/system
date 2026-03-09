@@ -19,7 +19,6 @@
 
 [core]
 	editor = nvim
-	excludesfile = ~/.gitignore_global
 	autocrlf = false
 
 [color]
@@ -34,12 +33,6 @@
 	log = delta
 	reflog = delta
 	show = delta
-
-[alias]
-	st = status -sb
-	lg = log --oneline --graph --decorate
-	co = checkout
-	br = branch
 
 [rerere]
 	enabled = true

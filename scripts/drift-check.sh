@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-set -uo pipefail
+set -uo pipefail  # no -e: collect all drift items rather than stopping on first failure
 
 # Drift check: detect anything installed/changed on the system that isn't
 # tracked in the Brewfile, dotfiles, or README.
 #
-# Exit 0 = no drift, exit 1 = drift detected.
+# Always exits 0 (Dagu treats non-zero as failure).
 # When run via Dagu (or with --notify), sends an email summary.
 
 BREWFILE="${HOME}/github/system/Brewfile"
@@ -89,7 +89,7 @@ while IFS= read -r app; do
     fi
   done
   if ! $found; then
-    drift "/Applications/$app not tracked (add to Brewfile or known_manual_apps)"
+    drift "/Applications/$app not tracked (add to Brewfile or known-apps.conf)"
   fi
 done < <(ls /Applications/ 2>/dev/null)
 
@@ -132,7 +132,6 @@ check_link() {
 check_link "${HOME}/.zshrc"                                                    "${DOTFILES}/.zshrc"
 check_link "${HOME}/.tmux.conf"                                                "${DOTFILES}/.tmux.conf"
 check_link "${HOME}/.gitconfig"                                                "${DOTFILES}/.gitconfig"
-check_link "${HOME}/.gitignore_global"                                         "${DOTFILES}/.gitignore_global"
 check_link "${HOME}/.ssh/config"                                               "${DOTFILES}/.ssh-config"
 check_link "${HOME}/.ssh/config.local"                                         "${PRIVATE}/ssh-config.local"
 check_link "${HOME}/.config/ghostty/config"                                    "${DOTFILES}/.config/ghostty/config"
@@ -224,7 +223,8 @@ fi
 echo ""
 echo "=============================="
 NOTIFY=${1:-}
-NOTIFY_EMAIL="the configured Gmail account"
+CONF="${HOME}/Drive/system/droplet-watchdog.conf"
+[[ -f "$CONF" ]] && source "$CONF"  # expects NOTIFY_EMAIL
 
 send_email() {
   local subject="$1" body="$2"
@@ -246,9 +246,6 @@ should_notify() {
 
 if [[ ${#DRIFT[@]} -eq 0 ]]; then
   echo "No drift detected."
-  if should_notify; then
-    send_email "Drift Check: all clear" "No drift detected."
-  fi
   exit 0
 else
   echo "${#DRIFT[@]} issue(s) found:"

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# Symlink public and private dotfiles into $HOME.
 
 PUBLIC="${HOME}/github/system/dotfiles"
 PRIVATE="${HOME}/Drive/system"
@@ -49,7 +50,6 @@ echo ""
 # --- Git ---
 echo "--- Git ---"
 link "${PUBLIC}/.gitconfig"                        "${HOME}/.gitconfig"
-link "${PUBLIC}/.gitignore_global"                 "${HOME}/.gitignore_global"
 echo ""
 
 # --- SSH ---

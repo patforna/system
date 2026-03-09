@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-set -uo pipefail
+set -uo pipefail  # no -e: continue past individual check failures
 
 # Alert if the dev droplet has been running longer than 24 hours.
-# Sends an email via Mail.app and a macOS notification.
+# Sends an email via gog (Gmail) and a macOS notification.
 #
 # Usage: droplet-watchdog.sh
 # Designed to run via Dagu every 4 hours.

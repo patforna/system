@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# Bootstrap script for Ubuntu dev droplet. Installs all tools, links configs.
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 ARCH=$(dpkg --print-architecture)
@@ -189,7 +190,6 @@ link "$REPO_DIR/remote/tmux.conf"  "$HOME/.tmux.conf"
 link "$REPO_DIR/remote/gitconfig"  "$HOME/.gitconfig"
 
 # Shared configs (identical on Mac + Linux)
-link "$REPO_DIR/dotfiles/.gitignore_global"           "$HOME/.gitignore_global"
 link "$REPO_DIR/dotfiles/.config/starship.toml"       "$HOME/.config/starship.toml"
 link "$REPO_DIR/dotfiles/.config/atuin/config.toml"   "$HOME/.config/atuin/config.toml"
 link "$REPO_DIR/dotfiles/.config/nvim/init.lua"       "$HOME/.config/nvim/init.lua"
@@ -203,8 +203,10 @@ link "$REPO_DIR/dotfiles/.config/fd/config"           "$HOME/.config/fd/config"
 mkdir -p "$HOME/.claude/projects"
 link "$REPO_DIR/dotfiles/.claude/CLAUDE.md"             "$HOME/.claude/CLAUDE.md"
 link "$REPO_DIR/dotfiles/.claude/statusline-command.sh" "$HOME/.claude/statusline-command.sh"
-ln -sfn "$REPO_DIR/dotfiles/.claude/skills"             "$HOME/.claude/skills"
-echo "  OK    $HOME/.claude/skills"
+if [[ -d "$REPO_DIR/dotfiles/.claude/skills" ]]; then
+  ln -sfn "$REPO_DIR/dotfiles/.claude/skills"             "$HOME/.claude/skills"
+  echo "  OK    $HOME/.claude/skills"
+fi
 
 # Claude settings — generated because the statusline path is machine-specific
 cat > "$HOME/.claude/settings.json" <<'SETTINGS'

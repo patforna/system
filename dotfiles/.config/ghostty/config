@@ -1,6 +1,5 @@
 macos-non-native-fullscreen = true
 macos-option-as-alt = true
-# command = /opt/homebrew/bin/tmux new-session -A -s play
 quit-after-last-window-closed = true
 
 # Shell integration

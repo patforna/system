@@ -21,7 +21,6 @@
 # --- Editor & ignore ---
 [core]
 	editor = nvim
-	excludesfile = ~/.gitignore_global
 	autocrlf = false
 
 # --- Colors & pager (delta) ---
@@ -38,13 +37,6 @@
 	reflog = delta
 	show = delta
 
-# --- Helpful quality-of-life ---
-[alias]
-	st = status -sb       # short + branch/ahead-behind
-	lg = log --oneline --graph --decorate
-	co = checkout
-	br = branch
-
 # --- Rerere keeps conflict resolutions for reuse ---
 [rerere]
 	enabled = true
@@ -52,13 +44,6 @@
 # --- Credentials (macOS keychain) ---
 [credential]
 	helper = osxkeychain
-
-# --- LFS (keep as-is if you use it) ---
-[filter "lfs"]
-	required = true
-	clean = git-lfs clean -- %f
-	smudge = git-lfs smudge -- %f
-	process = git-lfs filter-process
 
 # --- (optional) signing ---
 # [commit]

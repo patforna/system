@@ -132,7 +132,7 @@ export CLAUDE_CODE_MAX_OUTPUT_TOKENS=64000
 export GOG_ACCOUNT=the configured Gmail account
 
 
-# Added for claude code github plugin
+# GitHub token for Claude Code plugins
 export GITHUB_PERSONAL_ACCESS_TOKEN="${GITHUB_PERSONAL_ACCESS_TOKEN:-$(gh auth token)}"
 
 # --- Ghostty shell integration ---

@@ -41,7 +41,7 @@ See [`remote/README.md`](remote/README.md) for the full playbook.
 | Category       | Config                                                |
 |----------------|-------------------------------------------------------|
 | Shell          | `.zshrc`, `.tmux.conf`                                |
-| Git            | `.gitconfig`, `.gitignore_global`, `.config/git/ignore` |
+| Git            | `.gitconfig`, `.config/git/ignore`                      |
 | SSH            | `.ssh-config` (uses `Include` for machine-local IP)   |
 | Terminal       | `.config/ghostty/config`                              |
 | Neovim         | `.config/nvim/init.lua`, `lazy-lock.json`             |
