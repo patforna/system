@@ -80,7 +80,10 @@ known_manual_apps=(
   "Google Drive.app"
   "Google Sheets.app"
   "Google Slides.app"
+  "Conductor.app"
+  "GitHub Desktop.app"
   "Pixelmator Pro.app"
+  "PyCharm.app"
   "Safari.app"
   "Utilities"
 )
@@ -206,7 +209,7 @@ fi
 section "New config directories"
 known_config_dirs=(
   ghostty nvim starship.toml atuin btop gh git fd   # managed in dotfiles
-  configstore iterm2 yarn op                       # ephemeral / not worth managing
+  configstore yarn op                              # ephemeral / not worth managing
 )
 
 config_drift_count=${#DRIFT[@]}
@@ -235,18 +238,29 @@ echo "=============================="
 NOTIFY=${1:-}
 NOTIFY_EMAIL="patric.fornasier@gmail.com"
 
-notify() {
+send_email() {
   local subject="$1" body="$2"
-  if [[ -z "${TERM:-}" ]] || [[ "$NOTIFY" == "--notify" ]]; then
-    if command -v gog &>/dev/null; then
-      gog gmail send --to "$NOTIFY_EMAIL" --subject "$subject" --body="$body" --force 2>/dev/null || true
-    fi
+  if command -v gog &>/dev/null; then
+    gog gmail send --to "$NOTIFY_EMAIL" --subject "$subject" --body="$body" --force 2>/dev/null || true
   fi
+}
+
+create_issue() {
+  local title="$1" body="$2"
+  if command -v gh &>/dev/null; then
+    gh issue create --repo patforna/system --title "$title" --body "$body" --label "drift" 2>/dev/null || true
+  fi
+}
+
+should_notify() {
+  [[ -z "${TERM:-}" ]] || [[ "$NOTIFY" == "--notify" ]]
 }
 
 if [[ ${#DRIFT[@]} -eq 0 ]]; then
   echo "No drift detected."
-  notify "Drift Check: all clear" "No drift detected."
+  if should_notify; then
+    send_email "Drift Check: all clear" "No drift detected."
+  fi
   exit 0
 else
   echo "${#DRIFT[@]} issue(s) found:"
@@ -255,6 +269,8 @@ else
     echo "  - $d"
     body+="- $d"$'\n'
   done
-  notify "Drift Check: ${#DRIFT[@]} issue(s)" "$body"
+  if should_notify; then
+    create_issue "Drift Check: ${#DRIFT[@]} issue(s)" "$body"
+  fi
   exit 1
 fi
