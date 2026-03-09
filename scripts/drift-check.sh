@@ -95,8 +95,7 @@ known_cask_apps=(
   "Claude.app"
   "CleanShot X.app"
   "Codex.app"
-  "Cursor.app"
-  "Ghostty.app"
+"Ghostty.app"
   "Google Chrome.app"
   "Rectangle.app"
   "Slack.app"
@@ -177,8 +176,6 @@ check_link "${HOME}/.claude/CLAUDE.md"                                         "
 check_link "${HOME}/.claude/statusline-command.sh"                             "${DOTFILES}/.claude/statusline-command.sh"
 check_link "${HOME}/Library/Application Support/Code/User/settings.json"       "${DOTFILES}/vscode-settings.json"
 check_link "${HOME}/Library/Application Support/Code/User/keybindings.json"    "${DOTFILES}/vscode-keybindings.json"
-check_link "${HOME}/Library/Application Support/Cursor/User/settings.json"     "${DOTFILES}/vscode-settings.json"
-check_link "${HOME}/Library/Application Support/Cursor/User/keybindings.json"  "${DOTFILES}/vscode-keybindings.json"
 check_link "${HOME}/.codex/config.toml"                                        "${DOTFILES}/.codex/config.toml"
 
 symlink_drifts=$(printf '%s\n' "${DRIFT[@]}" | grep -c "symlink\|points to" 2>/dev/null || true)

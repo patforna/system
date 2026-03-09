@@ -47,18 +47,6 @@ if ! gh auth status &>/dev/null 2>&1; then
   echo ""
 fi
 
-# --- Cursor Extensions ---
-# brew bundle only installs extensions into VS Code (via the `vscode` directive).
-# Cursor is a VS Code fork that uses the same extension format but a separate
-# extensions directory (~/.cursor/extensions/). Mirror VS Code extensions there.
-if command -v cursor &>/dev/null; then
-  echo "--- Cursor Extensions ---"
-  grep '^vscode ' "${HOME}/github/system/Brewfile" | sed 's/^vscode "\(.*\)"/\1/' | while read -r ext; do
-    cursor --install-extension "$ext" 2>/dev/null || echo "  WARN  $ext failed"
-  done
-  echo ""
-fi
-
 # --- macOS Defaults ---
 echo "--- macOS Defaults ---"
 defaults write com.apple.dock static-only -bool true 2>/dev/null && killall Dock 2>/dev/null || true

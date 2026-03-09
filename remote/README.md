@@ -102,7 +102,7 @@ dev-down   # done for the day — snapshot + destroy
 dev-up     # back to work — restore from snapshot
 ```
 
-### Cursor Remote SSH
+### VS Code Remote SSH
 
 Connect to `dev` in the Remote Explorer — it picks up your SSH config.
 
