@@ -201,7 +201,6 @@ link "$REPO_DIR/dotfiles/.config/fd/config"           "$HOME/.config/fd/config"
 
 # Claude Code
 mkdir -p "$HOME/.claude/projects"
-link "$REPO_DIR/dotfiles/.claude/CLAUDE.md"             "$HOME/.claude/CLAUDE.md"
 link "$REPO_DIR/dotfiles/.claude/statusline-command.sh" "$HOME/.claude/statusline-command.sh"
 if [[ -d "$REPO_DIR/dotfiles/.claude/skills" ]]; then
   ln -sfn "$REPO_DIR/dotfiles/.claude/skills"             "$HOME/.claude/skills"

@@ -94,5 +94,11 @@
   "claudeCode.initialPermissionMode": "bypassPermissions",
   "claudeCode.usePythonEnvironment": false,
   "claudeCode.useTerminal": true,
-  "git.blame.editorDecoration.enabled": false
+  "git.blame.editorDecoration.enabled": false,
+  "github.copilot.enable": {
+    "*": false,
+    "plaintext": false,
+    "markdown": false,
+    "scminput": false
+  }
 }
