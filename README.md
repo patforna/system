@@ -51,7 +51,7 @@ See [`remote/README.md`](remote/README.md) for the full playbook.
 | Monitor        | `.config/btop/btop.conf`                              |
 | GitHub CLI     | `.config/gh/config.yml`                               |
 | fd             | `.config/fd/config`                                   |
-| Claude Code    | `.claude/CLAUDE.md`, `statusline-command.sh`          |
+| Claude Code    | `statusline-command.sh`                               |
 | Codex          | `.codex/config.toml`                                  |
 | Packages       | `Brewfile`                                            |
 | File assocs    | `scripts/file-associations.conf`                      |
@@ -94,6 +94,7 @@ Drift detection checks:
 
 Some files are machine-local and not in this repo:
 
+- `~/.claude/CLAUDE.md` — global Claude Code instructions
 - `~/.ssh/config.local` — droplet IP (written by `dev-up`)
 - `~/.claude/skills/` — Claude Code skill definitions
 - `~/.claude/settings.json` — generated per-machine by bootstrap
