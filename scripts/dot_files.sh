@@ -37,7 +37,6 @@ echo "--- Directories ---"
 ensure_local_dir "${HOME}/.config"
 ensure_local_dir "${HOME}/.claude"
 ensure_local_dir "${HOME}/.claude/skills"
-ensure_local_dir "${HOME}/.cursor"
 ensure_local_dir "${HOME}/.codex"
 echo ""
 
@@ -88,12 +87,10 @@ if [[ -d "${PRIVATE}/skills" ]]; then
 fi
 echo ""
 
-# --- Editors (shared settings for VS Code + Cursor) ---
-echo "--- Editors ---"
+# --- VS Code ---
+echo "--- VS Code ---"
 link "${PUBLIC}/vscode-settings.json"              "${HOME}/Library/Application Support/Code/User/settings.json"
-link "${PUBLIC}/vscode-settings.json"              "${HOME}/Library/Application Support/Cursor/User/settings.json"
 link "${PUBLIC}/vscode-keybindings.json"           "${HOME}/Library/Application Support/Code/User/keybindings.json"
-link "${PUBLIC}/vscode-keybindings.json"           "${HOME}/Library/Application Support/Cursor/User/keybindings.json"
 echo ""
 
 # --- Codex ---

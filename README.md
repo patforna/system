@@ -15,7 +15,7 @@ Brewfile               # brew packages, casks, VS Code extensions
 
 **Tools:** ripgrep, fd, fzf, eza, bat, delta, lazygit, zoxide, atuin, btop
 
-**Editors:** VS Code + Cursor (shared settings), neovim for quick edits
+**Editors:** VS Code, neovim for quick edits
 
 **AI:** Claude Code, Codex
 
@@ -29,7 +29,7 @@ Brewfile               # brew packages, casks, VS Code extensions
 ~/github/system/scripts/bootstrap.sh
 ```
 
-Installs Homebrew, all packages from the Brewfile, Claude Code, symlinks dotfiles, sets up Cursor extensions, configures macOS defaults, and schedules weekly drift checks.
+Installs Homebrew, all packages from the Brewfile, Claude Code, symlinks dotfiles, configures macOS defaults, and schedules weekly drift checks.
 
 ### Remote droplet
 
