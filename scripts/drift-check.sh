@@ -71,13 +71,19 @@ fi
 # --- /Applications ---
 section "Applications"
 
-# Known apps loaded from external file (one app per line, # comments ignored)
-KNOWN_APPS_FILE="${HOME}/github/system/scripts/known-apps.conf"
+# Manual apps loaded from external file (one app per line, # comments ignored)
+MANUAL_APPS_FILE="${HOME}/github/system/scripts/manual-apps.conf"
 all_known=()
 while IFS= read -r line; do
   [[ -z "$line" || "$line" == \#* ]] && continue
   all_known+=("$line")
-done < "$KNOWN_APPS_FILE"
+done < "$MANUAL_APPS_FILE"
+
+# Add apps installed by brew casks (detected from Caskroom)
+while IFS= read -r app; do
+  [[ -z "$app" ]] && continue
+  all_known+=("$app")
+done < <(find "$(brew --prefix)/Caskroom" -name '*.app' -maxdepth 3 -exec basename {} \; 2>/dev/null)
 
 while IFS= read -r app; do
   [[ -z "$app" ]] && continue
@@ -89,7 +95,7 @@ while IFS= read -r app; do
     fi
   done
   if ! $found; then
-    drift "/Applications/$app not tracked (add to Brewfile or known-apps.conf)"
+    drift "/Applications/$app not tracked (add to Brewfile or manual-apps.conf)"
   fi
 done < <(ls /Applications/ 2>/dev/null)
 
@@ -191,13 +197,18 @@ fi
 
 # --- New config directories ---
 section "New config directories"
-# Known config dirs loaded from external file
-KNOWN_CONFIG_FILE="${HOME}/github/system/scripts/known-config-dirs.conf"
+# Config dirs managed in dotfiles (detected automatically)
 known_config_dirs=()
+while IFS= read -r dir; do
+  known_config_dirs+=("$(basename "$dir")")
+done < <(find "${DOTFILES}/.config" -mindepth 1 -maxdepth 1 2>/dev/null)
+
+# Additional unmanaged but expected config dirs
+UNMANAGED_CONFIG_FILE="${HOME}/github/system/scripts/unmanaged-config-dirs.conf"
 while IFS= read -r line; do
   [[ -z "$line" || "$line" == \#* ]] && continue
   known_config_dirs+=("$line")
-done < "$KNOWN_CONFIG_FILE"
+done < "$UNMANAGED_CONFIG_FILE"
 
 config_drift_count=${#DRIFT[@]}
 while IFS= read -r dir; do
