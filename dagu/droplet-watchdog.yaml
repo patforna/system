@@ -1,0 +1,5 @@
+schedule: "0 */4 * * *"
+
+steps:
+  - name: droplet-watchdog
+    command: bash /Users/patric/github/system/scripts/droplet-watchdog.sh

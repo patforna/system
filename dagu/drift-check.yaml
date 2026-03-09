@@ -1,0 +1,5 @@
+schedule: "0 10 * * 1"
+
+steps:
+  - name: drift-check
+    command: bash -c 'eval "$(/opt/homebrew/bin/brew shellenv)" && "${HOME}/github/system/scripts/drift-check.sh" --notify'
