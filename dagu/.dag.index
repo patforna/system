@@ -1,0 +1,4 @@
+»±ºÍ8
+drift-check.yaml±é ÑŒªòÈÍ"drift-check:
+0 10 * * 1C
+droplet-watchdog.yaml…ıı«‡­òÈÍ"droplet-watchdog:0 */4 * * *

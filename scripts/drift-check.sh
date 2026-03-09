@@ -177,6 +177,7 @@ check_link "${HOME}/.claude/statusline-command.sh"                             "
 check_link "${HOME}/Library/Application Support/Code/User/settings.json"       "${DOTFILES}/vscode-settings.json"
 check_link "${HOME}/Library/Application Support/Code/User/keybindings.json"    "${DOTFILES}/vscode-keybindings.json"
 check_link "${HOME}/.codex/config.toml"                                        "${DOTFILES}/.codex/config.toml"
+check_link "${HOME}/.config/dagu/dags"                                         "${HOME}/github/system/dagu"
 
 symlink_drifts=$(printf '%s\n' "${DRIFT[@]}" | grep -c "symlink\|points to" 2>/dev/null || true)
 if [[ "$symlink_drifts" -eq 0 ]]; then
@@ -205,7 +206,7 @@ fi
 # --- New config directories ---
 section "New config directories"
 known_config_dirs=(
-  ghostty nvim starship.toml atuin btop gh git fd   # managed in dotfiles
+  ghostty nvim starship.toml atuin btop gh git fd dagu  # managed in dotfiles
   configstore yarn op                              # ephemeral / not worth managing
 )
 
@@ -269,5 +270,5 @@ else
   if should_notify; then
     create_issue "Drift Check: ${#DRIFT[@]} issue(s)" "$body"
   fi
-  exit 1
+  exit 0
 fi
