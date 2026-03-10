@@ -11,7 +11,7 @@ export PATH="${HOME}/.local/bin:${PATH}"
 
 BREWFILE="${HOME}/github/system/Brewfile"
 DOTFILES="${HOME}/github/system/dotfiles"
-PRIVATE="${HOME}/Drive/system"
+PRIVATE="${HOME}/github/system/private"
 DRIFT=()
 
 # --- Helpers ---
@@ -153,6 +153,12 @@ check_link "${HOME}/.config/git/ignore"                                        "
 check_link "${HOME}/.config/fd/config"                                         "${DOTFILES}/.config/fd/config"
 check_link "${HOME}/.claude/CLAUDE.md"                                         "${PRIVATE}/claude/CLAUDE.md"
 check_link "${HOME}/.claude/memory/MEMORY.md"                                  "${PRIVATE}/claude/memory/MEMORY.md"
+# Skills — check each skill dir is symlinked from private/skills/
+for skill_dir in "${PRIVATE}/skills"/*/; do
+  [[ -d "$skill_dir" ]] || continue
+  skill_name=$(basename "$skill_dir")
+  check_link "${HOME}/.claude/skills/${skill_name}" "$skill_dir"
+done
 check_link "${HOME}/.claude/statusline-command.sh"                             "${DOTFILES}/.claude/statusline-command.sh"
 check_link "${HOME}/Library/Application Support/Code/User/settings.json"       "${DOTFILES}/vscode-settings.json"
 check_link "${HOME}/Library/Application Support/Code/User/keybindings.json"    "${DOTFILES}/vscode-keybindings.json"
@@ -237,7 +243,7 @@ fi
 echo ""
 echo "=============================="
 NOTIFY=${1:-}
-CONF="${HOME}/Drive/system/droplet-watchdog.conf"
+CONF="${HOME}/github/system/private/droplet-watchdog.conf"
 [[ -f "$CONF" ]] && source "$CONF"  # expects NOTIFY_EMAIL
 
 send_email() {

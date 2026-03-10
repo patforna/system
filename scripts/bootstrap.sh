@@ -36,6 +36,26 @@ else
 fi
 echo ""
 
+# --- git-crypt ---
+echo "--- git-crypt ---"
+if command -v git-crypt &>/dev/null; then
+  cd "${HOME}/github/system"
+  if git-crypt status &>/dev/null 2>&1; then
+    echo "  OK    git-crypt already unlocked"
+  else
+    echo "  ACTION REQUIRED: Unlock private files with:"
+    echo "    cd ~/github/system && git-crypt unlock /path/to/git-crypt-key"
+    echo "  (Key is stored in 1Password as 'system-git-crypt-key')"
+    echo ""
+    echo "  Skipping dotfile setup until git-crypt is unlocked."
+    exit 0
+  fi
+  cd -
+else
+  echo "  SKIP  git-crypt not installed (should have been installed via Brewfile)"
+fi
+echo ""
+
 # --- Dotfiles ---
 echo "--- Linking dotfiles ---"
 bash "${HOME}/github/system/scripts/dot_files.sh"
@@ -118,5 +138,6 @@ echo "=== Done ==="
 echo ""
 echo "Manual steps:"
 echo "  1. Download SSH key from 1Password (if not done above)"
-echo "  2. VS Code → Cmd+Shift+P → 'Settings Sync: Turn Off'"
-echo "  3. Set up Trackpad, Keyboard shortcuts, Language in System Settings"
+echo "  2. Unlock git-crypt: cd ~/github/system && git-crypt unlock /path/to/key (key in 1Password)"
+echo "  3. VS Code → Cmd+Shift+P → 'Settings Sync: Turn Off'"
+echo "  4. Set up Trackpad, Keyboard shortcuts, Language in System Settings"
