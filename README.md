@@ -1,13 +1,13 @@
 # system
 
-Mac + remote dev environment, fully automated. One script to bootstrap a new Mac, another for an Ubuntu droplet. Drift detection catches anything that goes untracked. Private files are encrypted via git-crypt.
+Mac + remote dev environment, fully automated. One script to bootstrap a new Mac, another for an Ubuntu box. Drift detection catches anything that goes untracked. Private files are encrypted via git-crypt.
 
 ```
 dotfiles/              # config files, symlinked into $HOME
 private/               # encrypted (git-crypt): Claude skills, SSH config, personal scripts
 scripts/               # bootstrap, dotfile linker, drift checker, utilities
 dagu/                  # scheduled workflow definitions (drift check, watchdog)
-remote/                # Ubuntu droplet setup (separate bootstrap + configs)
+remote/                # Ubuntu box setup (separate bootstrap + configs)
 Brewfile               # brew packages, casks, VS Code extensions
 ```
 
@@ -21,7 +21,7 @@ Brewfile               # brew packages, casks, VS Code extensions
 
 **AI:** Claude Code, Codex
 
-**Remote:** Digital Ocean droplet with tmux — keeps Claude Code running when you close your laptop
+**Remote:** Digital Ocean box with tmux to keep agents running
 
 ## Bootstrap
 
@@ -48,12 +48,19 @@ Installs Homebrew, all packages from the Brewfile, Claude Code, unlocks git-cryp
 | Monitor        | `.config/btop/btop.conf`                              |
 | GitHub CLI     | `.config/gh/config.yml`                               |
 | fd             | `.config/fd/config`                                   |
-| Claude Code    | `statusline-command.sh`                               |
+| Claude Code    | `CLAUDE.md`, `memory/MEMORY.md`, `statusline-command.sh` |
 | Codex          | `.codex/config.toml`                                  |
 | Packages       | `Brewfile`                                            |
 | File assocs    | `scripts/file-associations.conf`                      |
+| Dagu           | `dagu/` — drift-check, droplet-watchdog, msgvault-sync |
 
 Only config files are symlinked — never caches, auth tokens, or session data.
+
+Scheduled workflows run via [Dagu](https://github.com/dagu-org/dagu) (web UI at `localhost:8080`).
+
+## Remote box
+
+See [`remote/README.md`](remote/README.md) for the full playbook.
 
 ## Maintenance
 
@@ -64,26 +71,9 @@ brew bundle dump --file=~/github/system/Brewfile --force
 # Re-run dotfile symlinks (idempotent)
 dot_files.sh
 
-# Check for local drift manually
+# Check for drift manually (includes Mac ↔ Linux remote config drift)
 drift-check.sh
-
-# Check for Mac ↔ Linux config drift (Claude Code skill)
-/remote-drift
 ```
-
-## Scheduled workflows
-
-[Dagu](https://github.com/dagu-org/dagu) runs scheduled workflows (web UI at `localhost:8080`). DAG definitions live in `dagu/` and are symlinked to `~/.config/dagu/dags`.
-
-| Workflow           | Schedule        | Description                                      |
-|--------------------|-----------------|--------------------------------------------------|
-| drift-check        | Daily 10:00     | Detects untracked system changes, files GH issues |
-| droplet-watchdog   | Every 4 hours   | Alerts if dev droplet runs longer than 24h       |
-| msgvault-sync      | Daily 9:00      | Syncs Gmail to local DuckDB for offline search   |
-
-## Remote droplet
-
-See [`remote/README.md`](remote/README.md) for the full playbook.
 
 ## Private files (git-crypt)
 
@@ -91,9 +81,9 @@ The `private/` directory is encrypted on GitHub and decrypted locally. It contai
 
 - `claude/CLAUDE.md` — global Claude Code instructions
 - `claude/memory/MEMORY.md` — Claude Code auto-memory
-- `skills/` — Claude Code skill definitions (gog, trackid, monthly-spending, ibkr-stocks-update, remote-drift)
+- `skills/` — Claude Code skill definitions (gog, trackid, monthly-spending, ibkr-stocks-update)
 - `scripts/` — private utility scripts (tid, tldr)
-- `ssh-config.local` — droplet IP (written by `dev-up`)
+- `ssh-config.local` — box IP (written by `dev-up`)
 - `droplet-watchdog.conf` — notification email
 
 ### Managing encrypted files
