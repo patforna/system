@@ -69,7 +69,6 @@ The `private/` directory is encrypted on GitHub and decrypted locally. It contai
 - `scripts/` — private utility scripts (tid, tldr)
 - `ssh-config.local` — droplet IP (written by `dev-up`)
 - `droplet-watchdog.conf` — notification email
-- `~/.claude/settings.json` — generated per-machine by bootstrap (not in repo)
 
 ### Managing encrypted files
 
