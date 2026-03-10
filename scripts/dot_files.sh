@@ -75,13 +75,13 @@ echo ""
 echo "--- Claude Code ---"
 ensure_local_dir "${HOME}/.claude/projects"
 ensure_local_dir "${HOME}/.claude/memory"
-link "${PRIVATE}/CLAUDE.md"                         "${HOME}/.claude/CLAUDE.md"
-link "${PRIVATE}/memory/MEMORY.md"                  "${HOME}/.claude/memory/MEMORY.md"
+link "${PRIVATE}/claude/CLAUDE.md"                   "${HOME}/.claude/CLAUDE.md"
+link "${PRIVATE}/claude/memory/MEMORY.md"            "${HOME}/.claude/memory/MEMORY.md"
 link "${PUBLIC}/.claude/statusline-command.sh"     "${HOME}/.claude/statusline-command.sh"
 
 # Skills — symlink each skill dir from private location
-if [[ -d "${PRIVATE}/skills" ]]; then
-  for skill in "${PRIVATE}/skills"/*/; do
+if [[ -d "${PRIVATE}/claude/skills" ]]; then
+  for skill in "${PRIVATE}/claude/skills"/*/; do
     skill_name=$(basename "$skill")
     ln -sfn "$skill" "${HOME}/.claude/skills/${skill_name}"
     echo "  OK    ~/.claude/skills/${skill_name}"
