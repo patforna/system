@@ -12,11 +12,15 @@ export PATH="${HOME}/.local/bin:${PATH}"
 BREWFILE="${HOME}/github/system/Brewfile"
 DOTFILES="${HOME}/github/system/dotfiles"
 PRIVATE="${HOME}/github/system/private"
+REMOTE="${HOME}/github/system/remote"
 DRIFT=()
 
 # --- Helpers ---
 
 section() { echo ""; echo "--- $1 ---"; }
+
+# Strip inline comments and trailing whitespace for config comparison
+strip_comments() { sed 's/[[:space:]]*#[^"'"'"']*$//; s/[[:space:]]*$//' ; }
 
 drift() {
   local msg="$1"
@@ -237,6 +241,229 @@ done < <(find "${HOME}/.config" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
 
 if [[ ${#DRIFT[@]} -eq $config_drift_count ]]; then
   ok "no new config directories"
+fi
+
+# =============================================================================
+# Remote config drift (Mac dotfiles vs remote/ Linux equivalents)
+# =============================================================================
+
+# --- Remote: Aliases & shell settings ---
+section "Remote: Aliases & shell"
+remote_shell_drift_count=${#DRIFT[@]}
+
+# Compare alias names (keys only — values may legitimately differ)
+mac_aliases=$(grep -E '^alias ' "${DOTFILES}/.zshrc" | sed "s/=.*//" | sort)
+remote_aliases=$(grep -E '^alias ' "${REMOTE}/zshrc" | sed "s/=.*//" | sort)
+while IFS= read -r a; do
+  [[ -z "$a" ]] && continue
+  # Mac-only aliases (clipboard, trash, glow, notes, dev SSH)
+  case "$a" in
+    "alias pbc"|"alias pbp"|"alias rm"|"alias md"|"alias n"|"alias dev") continue ;;
+  esac
+  drift "zshrc: $a missing from remote"
+done < <(comm -23 <(echo "$mac_aliases") <(echo "$remote_aliases"))
+
+# Compare alias values for shared aliases (strip inline comments before comparing)
+while IFS= read -r shared_alias; do
+  [[ -z "$shared_alias" ]] && continue
+  mac_val=$(grep -E "^${shared_alias}=" "${DOTFILES}/.zshrc" | head -1 | strip_comments)
+  remote_val=$(grep -E "^${shared_alias}=" "${REMOTE}/zshrc" | head -1 | strip_comments)
+  if [[ "$mac_val" != "$remote_val" ]]; then
+    drift "zshrc: $shared_alias differs — mac: ${mac_val#*=} remote: ${remote_val#*=}"
+  fi
+done < <(comm -12 <(echo "$mac_aliases") <(echo "$remote_aliases"))
+
+# Compare setopt lines (strip inline comments)
+mac_setopts=$(grep '^setopt ' "${DOTFILES}/.zshrc" | strip_comments | sort)
+remote_setopts=$(grep '^setopt ' "${REMOTE}/zshrc" | strip_comments | sort)
+while IFS= read -r line; do
+  [[ -z "$line" ]] && continue
+  drift "zshrc: '$line' missing from remote"
+done < <(comm -23 <(echo "$mac_setopts") <(echo "$remote_setopts"))
+
+# Compare exports (skip PATH, GOG_ACCOUNT, GITHUB_PERSONAL_ACCESS_TOKEN)
+mac_exports=$(grep '^export ' "${DOTFILES}/.zshrc" | grep -v 'PATH=\|GOG_ACCOUNT\|GITHUB_PERSONAL_ACCESS_TOKEN' | sed 's/=.*//' | sort)
+remote_exports=$(grep '^export ' "${REMOTE}/zshrc" | grep -v 'PATH=\|GITHUB_PERSONAL_ACCESS_TOKEN' | sed 's/=.*//' | sort)
+while IFS= read -r var; do
+  [[ -z "$var" ]] && continue
+  drift "zshrc: $var missing from remote"
+done < <(comm -23 <(echo "$mac_exports") <(echo "$remote_exports"))
+
+# Compare tool initializations by tool name (ignore path differences)
+# Extract: starship, zoxide, fzf, atuin
+mac_tools=$(grep -E '^eval |^source <' "${DOTFILES}/.zshrc" | sed 's/.*(\(.*\) .*/\1/; s/.*<(\(.*\) .*/\1/' | grep -oE '[a-z]+' | sort -u)
+remote_tools=$(grep -E '^eval |^source <' "${REMOTE}/zshrc" | sed 's/.*(\(.*\) .*/\1/; s/.*<(\(.*\) .*/\1/' | grep -oE '[a-z]+' | sort -u)
+while IFS= read -r tool; do
+  [[ -z "$tool" ]] && continue
+  drift "zshrc: tool init '$tool' missing from remote"
+done < <(comm -23 <(echo "$mac_tools") <(echo "$remote_tools"))
+
+# Compare bindkey lines (strip inline comments)
+mac_bindkeys=$(grep '^bindkey ' "${DOTFILES}/.zshrc" | strip_comments | sort)
+remote_bindkeys=$(grep '^bindkey ' "${REMOTE}/zshrc" | strip_comments | sort)
+while IFS= read -r line; do
+  [[ -z "$line" ]] && continue
+  drift "zshrc: '$line' missing from remote"
+done < <(comm -23 <(echo "$mac_bindkeys") <(echo "$remote_bindkeys"))
+
+if [[ ${#DRIFT[@]} -eq $remote_shell_drift_count ]]; then
+  ok "aliases & shell settings in sync"
+fi
+
+# --- Remote: Tmux config ---
+section "Remote: Tmux config"
+tmux_drift_count=${#DRIFT[@]}
+
+# Extract functional lines (skip comments, blanks, known platform diffs)
+tmux_filter='^\s*$|^#|pbcopy|copy-pipe-and-cancel|copy-selection-and-cancel|default-command|@plugin|@continuum|run .*tpm'
+mac_tmux=$(grep -vE "$tmux_filter" "${DOTFILES}/.tmux.conf" | sed 's/[[:space:]]*$//' | sort)
+remote_tmux=$(grep -vE "$tmux_filter" "${REMOTE}/tmux.conf" | sed 's/[[:space:]]*$//' | sort)
+
+while IFS= read -r line; do
+  [[ -z "$line" ]] && continue
+  drift "tmux: Mac-only line: $line"
+done < <(comm -23 <(echo "$mac_tmux") <(echo "$remote_tmux"))
+
+while IFS= read -r line; do
+  [[ -z "$line" ]] && continue
+  drift "tmux: remote-only line: $line"
+done < <(comm -13 <(echo "$mac_tmux") <(echo "$remote_tmux"))
+
+if [[ ${#DRIFT[@]} -eq $tmux_drift_count ]]; then
+  ok "tmux configs in sync"
+fi
+
+# --- Remote: Git config ---
+section "Remote: Git config"
+git_drift_count=${#DRIFT[@]}
+
+# Strip comments, blank lines, credential sections, and signing block
+git_filter='^\s*$|^#|^\[credential|helper|gpgsign|gpg'
+mac_git=$(grep -vE "$git_filter" "${DOTFILES}/.gitconfig" | strip_comments | sort)
+remote_git=$(grep -vE "$git_filter" "${REMOTE}/gitconfig" | strip_comments | sort)
+
+while IFS= read -r line; do
+  [[ -z "$line" ]] && continue
+  drift "gitconfig: Mac-only line: $line"
+done < <(comm -23 <(echo "$mac_git") <(echo "$remote_git"))
+
+while IFS= read -r line; do
+  [[ -z "$line" ]] && continue
+  drift "gitconfig: remote-only line: $line"
+done < <(comm -13 <(echo "$mac_git") <(echo "$remote_git"))
+
+if [[ ${#DRIFT[@]} -eq $git_drift_count ]]; then
+  ok "git configs in sync"
+fi
+
+# --- Remote: Shared dotfiles ---
+section "Remote: Shared dotfiles"
+shared_drift_count=${#DRIFT[@]}
+
+shared_files=(
+  "dotfiles/.config/starship.toml"
+  "dotfiles/.config/atuin/config.toml"
+  "dotfiles/.config/nvim/init.lua"
+  "dotfiles/.config/btop/btop.conf"
+)
+for f in "${shared_files[@]}"; do
+  filepath="${HOME}/github/system/${f}"
+  [[ -f "$filepath" ]] || continue
+  if grep -qiE '/opt/homebrew|pbcopy|pbpaste|osxkeychain|UseKeychain|\.app\b|/Applications' "$filepath"; then
+    drift "shared file '$f' has macOS-specific content"
+  fi
+done
+
+if [[ ${#DRIFT[@]} -eq $shared_drift_count ]]; then
+  ok "shared dotfiles have no macOS-specific content"
+fi
+
+# --- Remote: Claude Code settings ---
+section "Remote: Claude Code settings"
+claude_drift_count=${#DRIFT[@]}
+
+mac_settings="${HOME}/.claude/settings.json"
+# Extract heredoc from bootstrap.sh (between SETTINGS markers)
+remote_settings=$(sed -n '/^cat.*<<.*SETTINGS/,/^SETTINGS$/p' "${REMOTE}/bootstrap.sh" | sed '1d;$d')
+
+if [[ -f "$mac_settings" && -n "$remote_settings" ]] && command -v jq &>/dev/null; then
+  mac_normalized=$(jq -S '.' "$mac_settings" 2>/dev/null || true)
+  remote_normalized=$(echo "$remote_settings" | jq -S '.' 2>/dev/null || true)
+  if [[ -n "$mac_normalized" && -n "$remote_normalized" ]]; then
+    diff_output=$(diff <(echo "$mac_normalized") <(echo "$remote_normalized") || true)
+    if [[ -n "$diff_output" ]]; then
+      drift "Claude settings differ between Mac and bootstrap heredoc"
+    fi
+  fi
+fi
+
+if [[ ${#DRIFT[@]} -eq $claude_drift_count ]]; then
+  ok "Claude Code settings in sync"
+fi
+
+# --- Remote: Brewfile vs bootstrap ---
+section "Remote: Brewfile vs bootstrap"
+brew_remote_drift_count=${#DRIFT[@]}
+
+# Mac-only tools that shouldn't be on the droplet
+mac_only_tools="cloc|dagu|doctl|duckdb|duti|ffmpeg|git-crypt|glow|gogcli|imagemagick|python@3.12|trash|tree|watch|yarn|yt-dlp|zsh-autosuggestions|zsh-syntax-highlighting|zsh|git"
+
+# Extract CLI tool names from Brewfile (formulae only)
+brewfile_cli=$(grep '^brew ' "$BREWFILE" | sed 's/^brew "\(.*\)"/\1/' | grep -vE "^(${mac_only_tools})$" | sort)
+
+# Extract what bootstrap.sh installs (apt + gh_install + curl + special)
+bootstrap_tools=$(
+  # apt packages
+  sed -n '/apt-get install/,/^$/p' "${REMOTE}/bootstrap.sh" | tr '\\' ' ' | tr -s ' ' '\n' | grep -vE '^\s*$|apt-get|install|-y|-qq|sudo'
+  # gh_install binary names
+  grep '^gh_install ' "${REMOTE}/bootstrap.sh" | awk '{print $NF}'
+  # curl installer tools (command -v checks)
+  grep 'command -v .* &>/dev/null' "${REMOTE}/bootstrap.sh" | grep -oE 'command -v [a-z]+' | awk '{print $NF}'
+  # special: node, gh, stylua
+  echo "node"
+  echo "gh"
+  echo "stylua"
+)
+bootstrap_tools=$(echo "$bootstrap_tools" | sort -u)
+
+# Name mapping: Brewfile name -> bootstrap binary name
+map_name() {
+  case "$1" in
+    git-delta) echo "delta" ;;
+    fd)        echo "fd-find" ;;
+    bat)       echo "bat" ;;
+    *)         echo "$1" ;;
+  esac
+}
+
+for tool in $brewfile_cli; do
+  mapped=$(map_name "$tool")
+  if ! echo "$bootstrap_tools" | grep -qx "$mapped"; then
+    drift "Brewfile tool '$tool' not in bootstrap.sh"
+  fi
+done
+
+if [[ ${#DRIFT[@]} -eq $brew_remote_drift_count ]]; then
+  ok "Brewfile CLI tools covered by bootstrap"
+fi
+
+# --- Remote: SSH config ---
+section "Remote: SSH config"
+ssh_drift_count=${#DRIFT[@]}
+
+ssh_local="${PRIVATE}/ssh-config.local"
+if [[ -f "$ssh_local" ]]; then
+  if grep -q '<DROPLET_IP>' "$ssh_local"; then
+    drift "SSH config has placeholder <DROPLET_IP>"
+  elif ! grep -qE 'HostName [0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' "$ssh_local"; then
+    drift "SSH config: Host dev has no valid IP"
+  fi
+else
+  drift "SSH config: private/ssh-config.local not found"
+fi
+
+if [[ ${#DRIFT[@]} -eq $ssh_drift_count ]]; then
+  ok "SSH config has valid droplet IP"
 fi
 
 # --- Summary ---
