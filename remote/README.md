@@ -110,12 +110,8 @@ Connect to `dev` in the Remote Explorer — it picks up your SSH config.
 
 The Mac and Linux configs are maintained separately (`dotfiles/` vs `remote/`) because some things can't be shared directly (Homebrew paths, `pbcopy`, osxkeychain, etc.). When you update one side, the other may need a corresponding change.
 
-To check for drift between the two, use the `remote-drift` Claude Code skill:
+Remote config drift is checked automatically by `drift-check.sh` (daily via Dagu). It compares zshrc, tmux, gitconfig, shared dotfiles, Claude settings, Brewfile vs bootstrap tools, and SSH config. Run manually:
 
+```bash
+drift-check.sh
 ```
-/remote-drift
-```
-
-It diffs the Mac dotfiles against their Linux equivalents and flags anything that looks out of sync — e.g. a new alias added to `.zshrc` that's missing from `remote/zshrc`, or a tmux change that needs porting.
-
-Run it any time you make a non-trivial change to a shared config file.
