@@ -1,0 +1,3 @@
+# Everything in private/ is encrypted at rest on GitHub via git-crypt.
+# Locally (after `git-crypt unlock`) these files are plaintext.
+private/** filter=git-crypt diff=git-crypt

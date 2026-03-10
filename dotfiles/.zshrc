@@ -2,7 +2,7 @@
 export PATH="/opt/homebrew/bin:$PATH" # homebrew
 export PATH="$HOME/.local/bin:$PATH" # claude code
 export PATH="$HOME/github/system/scripts:$PATH"
-export PATH="$HOME/Drive/system/scripts:$PATH" # private scripts (not in repo)
+export PATH="$HOME/github/system/private/scripts:$PATH" # git-crypt encrypted
 export PATH="/opt/homebrew/opt/trash/bin:$PATH" # trash (keg-only)
 
 # --- History ---

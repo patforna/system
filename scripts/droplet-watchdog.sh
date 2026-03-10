@@ -9,7 +9,7 @@ set -uo pipefail  # no -e: continue past individual check failures
 
 DROPLET_NAME="dev"
 ALERT_AFTER_HOURS=24
-CONF="${HOME}/Drive/system/droplet-watchdog.conf"
+CONF="${HOME}/github/system/private/droplet-watchdog.conf"
 
 if [[ ! -f "$CONF" ]]; then
   exit 0  # no config, nothing to do
