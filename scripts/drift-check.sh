@@ -7,6 +7,8 @@ set -uo pipefail  # no -e: collect all drift items rather than stopping on first
 # Always exits 0 (Dagu treats non-zero as failure).
 # When run via Dagu (or with --notify), sends an email summary.
 
+export PATH="${HOME}/.local/bin:${PATH}"
+
 BREWFILE="${HOME}/github/system/Brewfile"
 DOTFILES="${HOME}/github/system/dotfiles"
 PRIVATE="${HOME}/Drive/system"
