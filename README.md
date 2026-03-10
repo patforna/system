@@ -17,6 +17,8 @@ Brewfile               # brew packages, casks, VS Code extensions
 
 **Tools:** ripgrep, fd, fzf, eza, bat, delta, lazygit, zoxide, atuin, btop
 
+**Automation:** Dagu — scheduled drift checks, watchdog alerts, syncs
+
 **Editors:** VS Code, neovim for quick edits
 
 **AI:** Claude Code, Codex
@@ -55,8 +57,6 @@ Installs Homebrew, all packages from the Brewfile, Claude Code, unlocks git-cryp
 | Dagu           | [`dagu/`](dagu/) — drift-check, droplet-watchdog, msgvault-sync |
 
 Only config files are symlinked — never caches, auth tokens, or session data.
-
-Scheduled workflows run via [Dagu](https://github.com/dagu-org/dagu) (web UI at `localhost:8080`).
 
 ## Remote box
 
