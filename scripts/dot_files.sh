@@ -74,7 +74,9 @@ echo ""
 # --- Claude Code ---
 echo "--- Claude Code ---"
 ensure_local_dir "${HOME}/.claude/projects"
+ensure_local_dir "${HOME}/.claude/memory"
 link "${PRIVATE}/CLAUDE.md"                         "${HOME}/.claude/CLAUDE.md"
+link "${PRIVATE}/memory/MEMORY.md"                  "${HOME}/.claude/memory/MEMORY.md"
 link "${PUBLIC}/.claude/statusline-command.sh"     "${HOME}/.claude/statusline-command.sh"
 
 # Skills — symlink each skill dir from private location
