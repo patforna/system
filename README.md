@@ -95,8 +95,9 @@ Drift detection checks:
 Some files are machine-local and not in this repo:
 
 - `~/.claude/CLAUDE.md` — global Claude Code instructions
-- `~/.ssh/config.local` — droplet IP (written by `dev-up`)
+- `~/.claude/memory/MEMORY.md` — global Claude Code auto-memory
 - `~/.claude/skills/` — Claude Code skill definitions
+- `~/.ssh/config.local` — droplet IP (written by `dev-up`)
 - `~/.claude/settings.json` — generated per-machine by bootstrap
 
 These live in a private companion directory (e.g. `~/Drive/system`) and are symlinked by `dot_files.sh`.
