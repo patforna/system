@@ -37,22 +37,22 @@ Installs Homebrew, all packages from the Brewfile, Claude Code, unlocks git-cryp
 
 | Category       | Config                                                |
 |----------------|-------------------------------------------------------|
-| Shell          | `.zshrc`, `.tmux.conf`                                |
-| Git            | `.gitconfig`, `.config/git/ignore`                    |
-| SSH            | `.ssh-config` (uses `Include` for machine-local IP)   |
-| Terminal       | `.config/ghostty/config`                              |
-| Neovim         | `.config/nvim/init.lua`, `lazy-lock.json`             |
-| Editors        | `vscode-settings.json`, `vscode-keybindings.json`     |
-| Prompt         | `.config/starship.toml`                               |
-| History        | `.config/atuin/config.toml`                           |
-| Monitor        | `.config/btop/btop.conf`                              |
-| GitHub CLI     | `.config/gh/config.yml`                               |
-| fd             | `.config/fd/config`                                   |
-| Claude Code    | `CLAUDE.md`, `memory/MEMORY.md`, `statusline-command.sh` |
-| Codex          | `.codex/config.toml`                                  |
-| Packages       | `Brewfile`                                            |
-| File assocs    | `scripts/file-associations.conf`                      |
-| Dagu           | `dagu/` — drift-check, droplet-watchdog, msgvault-sync |
+| Shell          | [`.zshrc`](dotfiles/.zshrc), [`.tmux.conf`](dotfiles/.tmux.conf) |
+| Git            | [`.gitconfig`](dotfiles/.gitconfig), [`.config/git/ignore`](dotfiles/.config/git/ignore) |
+| SSH            | [`.ssh-config`](dotfiles/.ssh-config) (uses `Include` for machine-local IP) |
+| Terminal       | [`.config/ghostty/config`](dotfiles/.config/ghostty/config) |
+| Neovim         | [`.config/nvim/init.lua`](dotfiles/.config/nvim/init.lua), [`lazy-lock.json`](dotfiles/.config/nvim/lazy-lock.json) |
+| Editors        | [`vscode-settings.json`](dotfiles/vscode-settings.json), [`vscode-keybindings.json`](dotfiles/vscode-keybindings.json) |
+| Prompt         | [`.config/starship.toml`](dotfiles/.config/starship.toml) |
+| History        | [`.config/atuin/config.toml`](dotfiles/.config/atuin/config.toml) |
+| Monitor        | [`.config/btop/btop.conf`](dotfiles/.config/btop/btop.conf) |
+| GitHub CLI     | [`.config/gh/config.yml`](dotfiles/.config/gh/config.yml) |
+| fd             | [`.config/fd/config`](dotfiles/.config/fd/config) |
+| Claude Code    | [`CLAUDE.md`](private/claude/CLAUDE.md), [`memory/MEMORY.md`](private/claude/memory/MEMORY.md), [`statusline-command.sh`](dotfiles/.claude/statusline-command.sh) |
+| Codex          | [`.codex/config.toml`](dotfiles/.codex/config.toml) |
+| Packages       | [`Brewfile`](Brewfile)                                |
+| File assocs    | [`scripts/file-associations.conf`](scripts/file-associations.conf) |
+| Dagu           | [`dagu/`](dagu/) — drift-check, droplet-watchdog, msgvault-sync |
 
 Only config files are symlinked — never caches, auth tokens, or session data.
 
