@@ -33,10 +33,6 @@ Brewfile               # brew packages, casks, VS Code extensions
 
 Installs Homebrew, all packages from the Brewfile, Claude Code, unlocks git-crypt, symlinks dotfiles, configures macOS defaults, and starts Dagu for scheduled workflows.
 
-### Remote droplet
-
-See [`remote/README.md`](remote/README.md) for the full playbook.
-
 ## What's managed
 
 | Category       | Config                                                |
@@ -58,6 +54,36 @@ See [`remote/README.md`](remote/README.md) for the full playbook.
 | File assocs    | `scripts/file-associations.conf`                      |
 
 Only config files are symlinked — never caches, auth tokens, or session data.
+
+## Maintenance
+
+```bash
+# Update Brewfile after installing new tools
+brew bundle dump --file=~/github/system/Brewfile --force
+
+# Re-run dotfile symlinks (idempotent)
+dot_files.sh
+
+# Check for local drift manually
+drift-check.sh
+
+# Check for Mac ↔ Linux config drift (Claude Code skill)
+/remote-drift
+```
+
+## Scheduled workflows
+
+[Dagu](https://github.com/dagu-org/dagu) runs scheduled workflows (web UI at `localhost:8080`). DAG definitions live in `dagu/` and are symlinked to `~/.config/dagu/dags`.
+
+| Workflow           | Schedule        | Description                                      |
+|--------------------|-----------------|--------------------------------------------------|
+| drift-check        | Daily 10:00     | Detects untracked system changes, files GH issues |
+| droplet-watchdog   | Every 4 hours   | Alerts if dev droplet runs longer than 24h       |
+| msgvault-sync      | Daily 9:00      | Syncs Gmail to local DuckDB for offline search   |
+
+## Remote droplet
+
+See [`remote/README.md`](remote/README.md) for the full playbook.
 
 ## Private files (git-crypt)
 
@@ -82,42 +108,9 @@ git-crypt status -e
 # Add a new private file: put it in private/, commit, done.
 # The .gitattributes rule encrypts everything in private/ automatically.
 
-# Unlock on a new machine (key stored in 1Password as 'system-git-crypt-key')
+# Unlock on a new machine (key stored in 1Password)
 git-crypt unlock /path/to/key
 ```
-
-## Maintenance
-
-```bash
-# Update Brewfile after installing new tools
-brew bundle dump --file=~/github/system/Brewfile --force
-
-# Re-run dotfile symlinks (idempotent)
-dot_files.sh
-
-# Check for local drift manually
-drift-check.sh
-
-# Check for Mac ↔ Linux config drift (Claude Code skill)
-/remote-drift
-```
-
-Scheduled workflows run via [Dagu](https://github.com/dagu-org/dagu) (`brew services start dagu`, web UI at `localhost:8080`). DAG definitions live in `dagu/` and are symlinked to `~/.config/dagu/dags`.
-
-| Workflow           | Schedule        | Description                                      |
-|--------------------|-----------------|--------------------------------------------------|
-| drift-check        | Daily 10:00     | Detects untracked system changes, files GH issues |
-| droplet-watchdog   | Every 4 hours   | Alerts if dev droplet runs longer than 24h       |
-| msgvault-sync      | Daily 9:00      | Syncs Gmail to local DuckDB for offline search   |
-
-Drift detection checks:
-
-- Brew formulae/casks vs Brewfile
-- `/Applications/` vs known apps
-- VS Code extensions vs Brewfile
-- All dotfile symlinks
-- New unmanaged directories in `~/.config/`
-- File associations vs `scripts/file-associations.conf`
 
 ## License
 
