@@ -225,7 +225,10 @@ cat > "$HOME/.claude/settings.json" <<'SETTINGS'
     "context7@claude-plugins-official": true,
     "github@claude-plugins-official": true
   },
-  "skipDangerousModePermissionPrompt": true
+  "skipDangerousModePermissionPrompt": true,
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  }
 }
 SETTINGS
 echo "  OK    $HOME/.claude/settings.json (generated)"
