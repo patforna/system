@@ -406,7 +406,7 @@ section "Remote: Brewfile vs bootstrap"
 brew_remote_drift_count=${#DRIFT[@]}
 
 # Mac-only tools that shouldn't be on the droplet
-mac_only_tools="cloc|dagu|doctl|duckdb|duti|ffmpeg|git-crypt|glow|gogcli|imagemagick|python@3.12|trash|tree|watch|yarn|yt-dlp|zsh-autosuggestions|zsh-syntax-highlighting|zsh|git"
+mac_only_tools="cloc|dagu|doctl|duckdb|duti|ffmpeg|git-crypt|glow|gogcli|imagemagick|poppler|python@3.12|trash|tree|watch|yarn|yt-dlp|zsh-autosuggestions|zsh-syntax-highlighting|zsh|git"
 
 # Extract CLI tool names from Brewfile (formulae only)
 brewfile_cli=$(grep '^brew ' "$BREWFILE" | sed 's/^brew "\(.*\)"/\1/' | grep -vE "^(${mac_only_tools})$" | sort)
