@@ -17,6 +17,8 @@ Brewfile               # brew packages, casks, VS Code extensions
 
 **Tools:** ripgrep, fd, fzf, eza, bat, delta, lazygit, zoxide, atuin, btop
 
+**Tracking:** ActivityWatch — local, privacy-first automatic time tracking (localhost:5600)
+
 **Automation:** Dagu — scheduled drift checks, watchdog alerts, syncs
 
 **Editors:** VS Code, neovim for quick edits
@@ -33,7 +35,7 @@ Brewfile               # brew packages, casks, VS Code extensions
 ~/github/system/scripts/bootstrap.sh
 ```
 
-Installs Homebrew, all packages from the Brewfile, Claude Code, unlocks git-crypt, symlinks dotfiles, configures macOS defaults, and starts Dagu for scheduled workflows.
+Installs Homebrew, all packages from the Brewfile, Claude Code, unlocks git-crypt, symlinks dotfiles, configures macOS defaults, sets up login items (ActivityWatch, Rectangle), and starts Dagu for scheduled workflows.
 
 ## What's managed
 
