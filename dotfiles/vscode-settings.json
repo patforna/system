@@ -100,5 +100,6 @@
     "plaintext": false,
     "markdown": false,
     "scminput": false
-  }
+  },
+  "editor.accessibilitySupport": "off"
 }

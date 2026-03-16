@@ -120,6 +120,9 @@ alias gri='git rebase -i'
 alias grc='git rebase --continue'
 alias gra='git rebase --abort'
 
+# claude
+alias cc='claude --dangerously-skip-permissions'
+
 # misc
 alias n='vim ~/Drive/admin/notes.txt'
 alias vz='vim ~/.zshrc'
