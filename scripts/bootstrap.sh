@@ -133,6 +133,23 @@ else
 fi
 echo ""
 
+# --- Login Items ---
+echo "--- Login Items ---"
+login_items=("ActivityWatch" "Rectangle")
+for app in "${login_items[@]}"; do
+  if [[ -d "/Applications/${app}.app" ]]; then
+    if osascript -e "tell application \"System Events\" to get the name of every login item" 2>/dev/null | grep -q "$app"; then
+      echo "  OK    ${app} already in login items"
+    else
+      osascript -e "tell application \"System Events\" to make login item at end with properties {path:\"/Applications/${app}.app\", hidden:false}" 2>/dev/null
+      echo "  ADD   ${app} added to login items"
+    fi
+  else
+    echo "  SKIP  ${app} not installed"
+  fi
+done
+echo ""
+
 # --- Reminders ---
 echo "=== Done ==="
 echo ""
