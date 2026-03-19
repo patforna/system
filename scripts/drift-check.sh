@@ -157,16 +157,15 @@ check_link "${HOME}/.config/git/ignore"                                        "
 check_link "${HOME}/.config/fd/config"                                         "${DOTFILES}/.config/fd/config"
 check_link "${HOME}/.claude/CLAUDE.md"                                         "${PRIVATE}/claude/CLAUDE.md"
 check_link "${HOME}/.claude/memory/MEMORY.md"                                  "${PRIVATE}/claude/memory/MEMORY.md"
+check_link "${HOME}/.claude/statusline-command.sh"                             "${DOTFILES}/.claude/statusline-command.sh"
 # Skills — check each skill dir is symlinked from private/skills/
 for skill_dir in "${PRIVATE}/skills"/*/; do
   [[ -d "$skill_dir" ]] || continue
   skill_name=$(basename "$skill_dir")
   check_link "${HOME}/.claude/skills/${skill_name}" "$skill_dir"
 done
-check_link "${HOME}/.claude/statusline-command.sh"                             "${DOTFILES}/.claude/statusline-command.sh"
 check_link "${HOME}/Library/Application Support/Code/User/settings.json"       "${DOTFILES}/vscode-settings.json"
 check_link "${HOME}/Library/Application Support/Code/User/keybindings.json"    "${DOTFILES}/vscode-keybindings.json"
-check_link "${HOME}/.codex/config.toml"                                        "${DOTFILES}/.codex/config.toml"
 check_link "${HOME}/.config/dagu/dags"                                         "${HOME}/github/system/dagu"
 
 symlink_drifts=$(printf '%s\n' "${DRIFT[@]+"${DRIFT[@]}"}" | grep -c "symlink\|points to" 2>/dev/null || true)
@@ -406,7 +405,7 @@ section "Remote: Brewfile vs bootstrap"
 brew_remote_drift_count=${#DRIFT[@]}
 
 # Mac-only tools that shouldn't be on the droplet
-mac_only_tools="cloc|dagu|doctl|duckdb|duti|ffmpeg|git-crypt|glow|gogcli|imagemagick|poppler|python@3.12|trash|tree|watch|yarn|yt-dlp|zsh-autosuggestions|zsh-syntax-highlighting|zsh|git"
+mac_only_tools="cloc|dagu|doctl|duckdb|duti|ffmpeg|git-crypt|glow|googleworkspace-cli|imagemagick|poppler|python@3.12|trash|tree|watch|yarn|yt-dlp|zsh-autosuggestions|zsh-syntax-highlighting|zsh|git"
 
 # Extract CLI tool names from Brewfile (formulae only)
 brewfile_cli=$(grep '^brew ' "$BREWFILE" | sed 's/^brew "\(.*\)"/\1/' | grep -vE "^(${mac_only_tools})$" | sort)
@@ -475,8 +474,8 @@ CONF="${HOME}/github/system/private/droplet-watchdog.conf"
 
 send_email() {
   local subject="$1" body="$2"
-  if command -v gog &>/dev/null; then
-    gog gmail send --to "$NOTIFY_EMAIL" --subject "$subject" --body="$body" --force 2>/dev/null || true
+  if command -v gws &>/dev/null; then
+    gws gmail +send --to "$NOTIFY_EMAIL" --subject "$subject" --body "$body" 2>/dev/null || true
   fi
 }
 

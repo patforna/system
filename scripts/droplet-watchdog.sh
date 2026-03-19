@@ -2,7 +2,7 @@
 set -uo pipefail  # no -e: continue past individual check failures
 
 # Alert if the dev droplet has been running longer than 24 hours.
-# Sends an email via gog (Gmail) and a macOS notification.
+# Sends an email via gws (Gmail) and a macOS notification.
 #
 # Usage: droplet-watchdog.sh
 # Designed to run via Dagu every 4 hours.
@@ -60,15 +60,14 @@ UPTIME_REM=$(( UPTIME_HOURS % 24 ))
 # --- Send macOS notification ---
 osascript -e "display notification \"Dev droplet running for ${UPTIME_DAYS}d ${UPTIME_REM}h. Run dev-down to stop billing.\" with title \"Droplet Watchdog\"" 2>/dev/null || true
 
-# --- Send email via gog ---
-if command -v gog &>/dev/null; then
-  gog gmail send \
+# --- Send email via gws ---
+if command -v gws &>/dev/null; then
+  gws gmail +send \
     --to "$NOTIFY_EMAIL" \
     --subject "Dev droplet running for ${UPTIME_DAYS}d ${UPTIME_REM}h" \
     --body "Your DigitalOcean dev droplet has been running for ${UPTIME_DAYS} days and ${UPTIME_REM} hours.
 
 Run dev-down to snapshot and destroy it.
 
-— droplet-watchdog" \
-    --force 2>/dev/null || true
+— droplet-watchdog" 2>/dev/null || true
 fi
