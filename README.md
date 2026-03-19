@@ -23,7 +23,7 @@ Brewfile               # brew packages, casks, VS Code extensions
 
 **Editors:** VS Code, neovim for quick edits
 
-**AI:** Claude Code, Codex
+**AI:** Claude Code
 
 **Remote:** Digital Ocean box with tmux to keep agents running
 
@@ -53,7 +53,6 @@ Installs Homebrew, all packages from the Brewfile, Claude Code, unlocks git-cryp
 | GitHub CLI     | [`.config/gh/config.yml`](dotfiles/.config/gh/config.yml) |
 | fd             | [`.config/fd/config`](dotfiles/.config/fd/config) |
 | Claude Code    | [`CLAUDE.md`](private/claude/CLAUDE.md), [`memory/MEMORY.md`](private/claude/memory/MEMORY.md), [`statusline-command.sh`](dotfiles/.claude/statusline-command.sh) |
-| Codex          | [`.codex/config.toml`](dotfiles/.codex/config.toml) |
 | Packages       | [`Brewfile`](Brewfile)                                |
 | File assocs    | [`scripts/file-associations.conf`](scripts/file-associations.conf) |
 | Dagu           | [`dagu/`](dagu/) — drift-check, droplet-watchdog, msgvault-sync |
@@ -83,7 +82,7 @@ The `private/` directory is encrypted on GitHub and decrypted locally. It contai
 
 - `claude/CLAUDE.md` — global Claude Code instructions
 - `claude/memory/MEMORY.md` — Claude Code auto-memory
-- `skills/` — Claude Code skill definitions (gog, trackid, monthly-spending, ibkr-stocks-update)
+- `skills/` — Claude Code skill definitions (trackid, monthly-spending, ibkr-stocks-update)
 - `scripts/` — private utility scripts (tid, tldr)
 - `ssh-config.local` — box IP (written by `dev-up`)
 - `droplet-watchdog.conf` — notification email
