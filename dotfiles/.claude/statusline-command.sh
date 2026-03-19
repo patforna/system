@@ -84,7 +84,7 @@ refresh_usage() {
         printf '%s' "$resp" | jq -e '.five_hour' >/dev/null 2>&1 || return 0
         printf '%s' "$resp" | jq '{ts: (now | floor), pct: (.five_hour.utilization // 0 | floor), resets_at: (.five_hour.resets_at // "")}' \
             > "${USAGE_CACHE}.tmp" 2>/dev/null && mv "${USAGE_CACHE}.tmp" "$USAGE_CACHE"
-    ) &
+    ) &>/dev/null &
 }
 
 section3=""
