@@ -40,7 +40,6 @@ echo "--- Directories ---"
 ensure_local_dir "${HOME}/.config"
 ensure_local_dir "${HOME}/.claude"
 ensure_local_dir "${HOME}/.claude/skills"
-ensure_local_dir "${HOME}/.codex"
 echo ""
 
 # --- Shell & Terminal ---
@@ -79,7 +78,7 @@ ensure_local_dir "${HOME}/.claude/projects"
 ensure_local_dir "${HOME}/.claude/memory"
 link "${PRIVATE}/claude/CLAUDE.md"                 "${HOME}/.claude/CLAUDE.md"
 link "${PRIVATE}/claude/memory/MEMORY.md"          "${HOME}/.claude/memory/MEMORY.md"
-link "${PUBLIC}/.claude/statusline-command.sh"      "${HOME}/.claude/statusline-command.sh"
+link "${PUBLIC}/.claude/statusline-command.sh"     "${HOME}/.claude/statusline-command.sh"
 
 # Skills — symlink each skill dir from private location
 if [[ -d "${PRIVATE}/skills" ]]; then
@@ -95,11 +94,6 @@ echo ""
 echo "--- VS Code ---"
 link "${PUBLIC}/vscode-settings.json"              "${HOME}/Library/Application Support/Code/User/settings.json"
 link "${PUBLIC}/vscode-keybindings.json"           "${HOME}/Library/Application Support/Code/User/keybindings.json"
-echo ""
-
-# --- Codex ---
-echo "--- Codex ---"
-link "${PUBLIC}/.codex/config.toml"                "${HOME}/.codex/config.toml"
 echo ""
 
 echo "=== Done ==="
