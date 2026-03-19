@@ -101,7 +101,8 @@ cat > "$HOME/.claude/settings.json" <<'SETTINGS'
   "model": "opus",
   "statusLine": {
     "type": "command",
-    "command": "/bin/bash $HOME/.claude/statusline-command.sh"
+    "command": "/bin/bash $HOME/.claude/statusline-command.sh",
+    "padding": 0
   },
   "mcpServers": {
     "notion": {
