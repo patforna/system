@@ -8,7 +8,7 @@ private/               # encrypted (git-crypt): SSH config, personal scripts, et
 scripts/               # bootstrap, dotfile linker, drift checker, utilities
 dagu/                  # scheduled workflow definitions (drift check, watchdog)
 remote/                # Ubuntu box setup (separate bootstrap + configs)
-Brewfile               # brew packages, casks, VS Code extensions
+Brewfile               # brew packages, casks, VS Code extensions, uv tools
 ```
 
 ## Stack
