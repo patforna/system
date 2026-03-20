@@ -129,6 +129,30 @@ else
   ok "VS Code not installed (skipping extension check)"
 fi
 
+# --- uv tools ---
+section "uv tools"
+if command -v uv &>/dev/null; then
+  brewfile_uv=$(grep '^uv ' "$BREWFILE" | sed 's/^uv "\(.*\)"/\1/' | sort)
+  installed_uv=$(uv tool list 2>/dev/null | grep -v '^-' | awk '{print $1}' | sort)
+  uv_drift_count=${#DRIFT[@]}
+
+  while IFS= read -r pkg; do
+    [[ -z "$pkg" ]] && continue
+    drift "uv tool '$pkg' installed but not in Brewfile"
+  done < <(comm -23 <(echo "$installed_uv") <(echo "$brewfile_uv"))
+
+  while IFS= read -r pkg; do
+    [[ -z "$pkg" ]] && continue
+    drift "uv tool '$pkg' in Brewfile but not installed"
+  done < <(comm -13 <(echo "$installed_uv") <(echo "$brewfile_uv"))
+
+  if [[ ${#DRIFT[@]} -eq $uv_drift_count ]]; then
+    ok "uv tools match Brewfile"
+  fi
+else
+  ok "uv not installed (skipping uv tool check)"
+fi
+
 # --- Symlinks ---
 section "Symlinks"
 
@@ -405,7 +429,7 @@ section "Remote: Brewfile vs bootstrap"
 brew_remote_drift_count=${#DRIFT[@]}
 
 # Mac-only tools that shouldn't be on the droplet
-mac_only_tools="cloc|dagu|doctl|duckdb|duti|ffmpeg|git-crypt|glow|googleworkspace-cli|imagemagick|poppler|python@3.12|trash|tree|watch|yarn|yt-dlp|zsh-autosuggestions|zsh-syntax-highlighting|zsh|git"
+mac_only_tools="ccusage|cloc|dagu|doctl|duckdb|duti|ffmpeg|git-crypt|glow|googleworkspace-cli|imagemagick|poppler|python@3.12|trash|tree|watch|yarn|yt-dlp|zsh-autosuggestions|zsh-syntax-highlighting|zsh|git"
 
 # Extract CLI tool names from Brewfile (formulae only)
 brewfile_cli=$(grep '^brew ' "$BREWFILE" | sed 's/^brew "\(.*\)"/\1/' | grep -vE "^(${mac_only_tools})$" | sort)
@@ -418,10 +442,11 @@ bootstrap_tools=$(
   grep '^gh_install ' "${REMOTE}/bootstrap.sh" | awk '{print $NF}'
   # curl installer tools (command -v checks)
   grep 'command -v .* &>/dev/null' "${REMOTE}/bootstrap.sh" | grep -oE 'command -v [a-z]+' | awk '{print $NF}'
-  # special: node, gh, stylua
+  # special: node, gh, stylua, tpm (installed via git clone)
   echo "node"
   echo "gh"
   echo "stylua"
+  echo "tpm"
 )
 bootstrap_tools=$(echo "$bootstrap_tools" | sort -u)
 
