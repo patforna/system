@@ -67,8 +67,8 @@ Custom statusline rendered by [`statusline-command.sh`](dotfiles/.claude/statusl
 
 | Section | Source | Description |
 |---------|--------|-------------|
-| 📁 cwd | stdin JSON | Working directory (cyan) |
-| 🤖 model | stdin JSON | Active model name (green) |
+| 📁 cwd | stdin JSON | Working directory |
+| 🤖 model | stdin JSON | Active model name |
 | 🧠 context | stdin JSON | Context window usage — bar turns yellow at 60%, red at 80% |
 | 🔥 usage | [OAuth API](https://api.anthropic.com/api/oauth/usage) | 5h billing window — real utilization % + reset countdown |
 
