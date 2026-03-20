@@ -38,8 +38,11 @@ brew "yt-dlp"
 brew "zoxide"
 brew "zsh"
 brew "zsh-autosuggestions"
+brew "mas"
 brew "zsh-syntax-highlighting"
 uv "shot-scraper"
+mas "Amphetamine", id: 937984704
+mas "Pixelmator Pro", id: 1289583905
 cask "activitywatch"
 cask "calibre"
 cask "claude"

@@ -91,6 +91,14 @@ while IFS= read -r app; do
   all_known+=("$app")
 done < <(find "$(brew --prefix)/Caskroom" -name '*.app' -maxdepth 3 -exec basename {} \; 2>/dev/null)
 
+# Add apps installed via Mac App Store (tracked in Brewfile via mas)
+if command -v mas &>/dev/null; then
+  while IFS= read -r app; do
+    [[ -z "$app" ]] && continue
+    all_known+=("${app}.app")
+  done < <(mas list 2>/dev/null | sed 's/^ *[0-9]*  *//; s/  *(.*$//')
+fi
+
 while IFS= read -r app; do
   [[ -z "$app" ]] && continue
   found=false
@@ -179,6 +187,10 @@ check_link "${HOME}/.config/btop/btop.conf"                                    "
 check_link "${HOME}/.config/gh/config.yml"                                     "${DOTFILES}/.config/gh/config.yml"
 check_link "${HOME}/.config/git/ignore"                                        "${DOTFILES}/.config/git/ignore"
 check_link "${HOME}/.config/fd/config"                                         "${DOTFILES}/.config/fd/config"
+check_link "${HOME}/.config/gcloud/configurations/config_default"              "${DOTFILES}/.config/gcloud/configurations/config_default"
+check_link "${HOME}/.config/gws/client_secret.json"                            "${PRIVATE}/gws/client_secret.json"
+check_link "${HOME}/.config/gws/.encryption_key"                               "${PRIVATE}/gws/.encryption_key"
+check_link "${HOME}/.config/gws/credentials.enc"                               "${PRIVATE}/gws/credentials.enc"
 check_link "${HOME}/.claude/CLAUDE.md"                                         "${PRIVATE}/claude/CLAUDE.md"
 check_link "${HOME}/.claude/memory/MEMORY.md"                                  "${PRIVATE}/claude/memory/MEMORY.md"
 check_link "${HOME}/.claude/statusline-command.sh"                             "${DOTFILES}/.claude/statusline-command.sh"
@@ -233,11 +245,14 @@ fi
 
 # --- New config directories ---
 section "New config directories"
-# Config dirs managed in dotfiles (detected automatically)
+# Config dirs managed in dotfiles or private (detected automatically)
 known_config_dirs=()
 while IFS= read -r dir; do
   known_config_dirs+=("$(basename "$dir")")
 done < <(find "${DOTFILES}/.config" -mindepth 1 -maxdepth 1 2>/dev/null)
+while IFS= read -r dir; do
+  known_config_dirs+=("$(basename "$dir")")
+done < <(find "${PRIVATE}" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
 
 # Additional unmanaged but expected config dirs
 UNMANAGED_CONFIG_FILE="${HOME}/github/system/scripts/unmanaged-config-dirs.conf"
@@ -429,7 +444,7 @@ section "Remote: Brewfile vs bootstrap"
 brew_remote_drift_count=${#DRIFT[@]}
 
 # Mac-only tools that shouldn't be on the droplet
-mac_only_tools="ccusage|cloc|dagu|doctl|duckdb|duti|ffmpeg|git-crypt|glow|googleworkspace-cli|imagemagick|poppler|python@3.12|trash|tree|watch|yarn|yt-dlp|zsh-autosuggestions|zsh-syntax-highlighting|zsh|git"
+mac_only_tools="ccusage|cloc|dagu|doctl|duckdb|duti|ffmpeg|git-crypt|glow|googleworkspace-cli|imagemagick|mas|poppler|python@3.12|trash|tree|watch|yarn|yt-dlp|zsh-autosuggestions|zsh-syntax-highlighting|zsh|git"
 
 # Extract CLI tool names from Brewfile (formulae only)
 brewfile_cli=$(grep '^brew ' "$BREWFILE" | sed 's/^brew "\(.*\)"/\1/' | grep -vE "^(${mac_only_tools})$" | sort)
