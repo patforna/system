@@ -49,7 +49,8 @@ section1=""
 
 # --- Section 2: Context Window ---
 section2=""
-((ctx_pct > 0)) && section2="🧠 $(render_bar "$ctx_pct")"
+ctx_pct="${ctx_pct:-0}"
+section2="🧠 $(render_bar "$ctx_pct")"
 
 # --- Section 3: 5h Billing Window (via OAuth API, cached) ---
 # Uses the same OAuth credentials as Claude Code (macOS Keychain).
@@ -93,7 +94,8 @@ if [[ -f "$USAGE_CACHE" ]]; then
     [[ "$cache_ts" =~ ^[0-9]+$ ]] || cache_ts=0
     # Trigger background refresh if stale
     (( $(date +%s) - cache_ts > USAGE_TTL )) && refresh_usage
-    if [[ -n "$usage_pct" && "$usage_pct" != "null" ]] && ((usage_pct > 0)); then
+    usage_pct="${usage_pct:-0}"
+    if [[ "$usage_pct" != "null" ]] && ((usage_pct >= 0)); then
         # Compute "Resets in Xh Ym" from resets_at
         reset_text=""
         if [[ -n "$resets_at" && "$resets_at" != "null" ]]; then
