@@ -70,6 +70,10 @@ link "${PUBLIC}/.config/btop/btop.conf"            "${HOME}/.config/btop/btop.co
 link "${PUBLIC}/.config/gh/config.yml"             "${HOME}/.config/gh/config.yml"
 link "${PUBLIC}/.config/git/ignore"                "${HOME}/.config/git/ignore"
 link "${PUBLIC}/.config/fd/config"                 "${HOME}/.config/fd/config"
+link "${PUBLIC}/.config/gcloud/configurations/config_default" "${HOME}/.config/gcloud/configurations/config_default"
+link "${PRIVATE}/gws/client_secret.json"          "${HOME}/.config/gws/client_secret.json"
+link "${PRIVATE}/gws/.encryption_key"             "${HOME}/.config/gws/.encryption_key"
+link "${PRIVATE}/gws/credentials.enc"             "${HOME}/.config/gws/credentials.enc"
 echo ""
 
 # --- Claude Code ---

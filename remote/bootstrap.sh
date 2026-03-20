@@ -210,24 +210,25 @@ fi
 # Claude settings — generated because the statusline path is machine-specific
 cat > "$HOME/.claude/settings.json" <<'SETTINGS'
 {
-  "model": "opus",
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
   "statusLine": {
     "type": "command",
-    "command": "/bin/bash $HOME/.claude/statusline-command.sh"
-  },
-  "mcpServers": {
-    "notion": {
-      "type": "http",
-      "url": "https://mcp.notion.com/mcp"
-    }
+    "command": "/bin/bash $HOME/.claude/statusline-command.sh",
+    "padding": 0
   },
   "enabledPlugins": {
     "context7@claude-plugins-official": true,
     "github@claude-plugins-official": true
   },
+  "effortLevel": "high",
   "skipDangerousModePermissionPrompt": true,
-  "env": {
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  "mcpServers": {
+    "notion": {
+      "type": "http",
+      "url": "https://mcp.notion.com/mcp"
+    }
   }
 }
 SETTINGS

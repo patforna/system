@@ -98,6 +98,11 @@ alias gri='git rebase -i'
 alias grc='git rebase --continue'
 alias gra='git rebase --abort'
 
+# tad
+alias jt='just tasks'
+alias jb='just backlog'
+alias jc='just check'
+
 # misc
 alias vz='vim ~/.zshrc'
 alias sz='source ~/.zshrc'
