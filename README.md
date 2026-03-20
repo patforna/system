@@ -4,7 +4,7 @@ Mac + remote dev environment, fully automated. One script to bootstrap a new Mac
 
 ```
 dotfiles/              # config files, symlinked into $HOME
-private/               # encrypted (git-crypt): Claude skills, SSH config, personal scripts
+private/               # encrypted (git-crypt): SSH config, personal scripts, etc.
 scripts/               # bootstrap, dotfile linker, drift checker, utilities
 dagu/                  # scheduled workflow definitions (drift check, watchdog)
 remote/                # Ubuntu box setup (separate bootstrap + configs)
