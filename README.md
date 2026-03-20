@@ -59,6 +59,21 @@ Installs Homebrew, all packages from the Brewfile, Claude Code, unlocks git-cryp
 
 Only config files are symlinked — never caches, auth tokens, or session data.
 
+### Claude Code statusline
+
+Custom statusline rendered by [`statusline-command.sh`](dotfiles/.claude/statusline-command.sh):
+
+> 📁 ~/github/system | 🤖 Opus 4.6 (1M) | 🧠 ▓▓░░░░░░░░ 15% | 🔥 ▓▓▓▓░░░░░░ 42% Resets in 2h 15m
+
+| Section | Source | Description |
+|---------|--------|-------------|
+| 📁 cwd | stdin JSON | Working directory (cyan) |
+| 🤖 model | stdin JSON | Active model name (green) |
+| 🧠 context | stdin JSON | Context window usage — bar turns yellow at 60%, red at 80% |
+| 🔥 usage | [OAuth API](https://api.anthropic.com/api/oauth/usage) | 5h billing window — real utilization % + reset countdown |
+
+Usage data is fetched from Anthropic's OAuth endpoint using Claude Code's own credentials (macOS Keychain), cached for 60s, and refreshed in the background to keep render time under 25ms.
+
 ## Remote box
 
 See [`remote/README.md`](remote/README.md) for the full playbook.
