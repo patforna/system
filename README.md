@@ -8,7 +8,7 @@ private/               # encrypted (git-crypt): SSH config, personal scripts, et
 scripts/               # bootstrap, dotfile linker, drift checker, utilities
 dagu/                  # scheduled workflow definitions (drift check, watchdog)
 remote/                # Ubuntu box setup (separate bootstrap + configs)
-Brewfile               # brew packages, casks, VS Code extensions, uv tools
+Brewfile               # brew packages, casks, VS Code extensions, uv tools, Mac App Store apps
 ```
 
 ## Stack
@@ -35,7 +35,7 @@ Brewfile               # brew packages, casks, VS Code extensions, uv tools
 ~/github/system/scripts/bootstrap.sh
 ```
 
-Installs Homebrew, all packages from the Brewfile, Claude Code, unlocks git-crypt, symlinks dotfiles, configures macOS defaults, sets up login items (ActivityWatch, Rectangle), and starts Dagu for scheduled workflows.
+Installs Homebrew, all packages from the Brewfile (formulae, casks, VS Code extensions, uv tools, Mac App Store apps), Claude Code, unlocks git-crypt, symlinks dotfiles, configures macOS defaults, sets up login items (ActivityWatch, Rectangle), and starts Dagu for scheduled workflows.
 
 ## What's managed
 
@@ -53,7 +53,7 @@ Installs Homebrew, all packages from the Brewfile, Claude Code, unlocks git-cryp
 | GitHub CLI     | [`.config/gh/config.yml`](dotfiles/.config/gh/config.yml) |
 | fd             | [`.config/fd/config`](dotfiles/.config/fd/config) |
 | Claude Code    | [`CLAUDE.md`](private/claude/CLAUDE.md), [`memory/MEMORY.md`](private/claude/memory/MEMORY.md), [`statusline-command.sh`](dotfiles/.claude/statusline-command.sh) |
-| Packages       | [`Brewfile`](Brewfile)                                |
+| Packages       | [`Brewfile`](Brewfile) — formulae, casks, VS Code extensions, uv tools, Mac App Store apps |
 | File assocs    | [`scripts/file-associations.conf`](scripts/file-associations.conf) |
 | Dagu           | [`dagu/`](dagu/) — drift-check, droplet-watchdog, msgvault-sync |
 
@@ -83,6 +83,13 @@ See [`remote/README.md`](remote/README.md) for the full playbook.
 ```bash
 # Update Brewfile after installing new tools
 brew bundle dump --file=~/github/system/Brewfile --force
+
+# Add a new tool by type
+brew bundle add <formula>                    # brew formula
+brew bundle add --cask <app>                 # desktop app
+brew bundle add --vscode <extension-id>      # VS Code extension
+brew bundle add --uv <package>               # Python CLI tool (via uv)
+# Mac App Store: add manually — mas "Name", id: <id> (find id with: mas search <name>)
 
 # Re-run dotfile symlinks (idempotent)
 dot_files.sh
