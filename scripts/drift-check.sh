@@ -165,10 +165,10 @@ fi
 section "Symlinks"
 
 check_link() {
-  local dest="$1" expected_src="$2"
+  local dest="$1" expected_src="${2%/}"  # strip trailing slash for comparison
   if [[ ! -L "$dest" ]]; then
     drift "$dest is not a symlink"
-  elif [[ "$(readlink "$dest")" != "$expected_src" ]]; then
+  elif [[ "$(readlink "$dest" | sed 's:/$::')" != "$expected_src" ]]; then
     drift "$dest points to $(readlink "$dest"), expected $expected_src"
   fi
 }
