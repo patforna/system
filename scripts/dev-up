@@ -56,5 +56,11 @@ doctl compute snapshot delete "$SNAPSHOT_ID" --force
 # --- Clear old host key ---
 ssh-keygen -R "$NEW_IP" 2>/dev/null || true
 
+# --- Pull latest system repo on remote ---
+echo "Pulling latest system repo on remote..."
+ssh -o StrictHostKeyChecking=accept-new dev \
+  "cd ~/github/system && git pull --ff-only" || \
+  echo "Warning: failed to pull system repo on remote (non-fatal)"
+
 echo ""
 echo "Done. Connect with: dev"
