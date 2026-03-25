@@ -9,6 +9,9 @@ command = "cat .python-version 2>/dev/null"
 detect_files = [".python-version"]
 format = "via 🐍 $output "
 
+[gcloud]
+disabled = true
+
 [package]
 disabled = true
 
