@@ -101,5 +101,10 @@
     "markdown": false,
     "scminput": false
   },
-  "editor.accessibilitySupport": "off"
+  "editor.accessibilitySupport": "off",
+
+  // --- Markdown Preview ---
+  "markdown-preview-github-styles.colorTheme": "light",
+  "markdown.preview.doubleClickToSwitchToEditor": false,
+  "oneDarkPro.markdownStyle": false
 }
