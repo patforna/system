@@ -173,6 +173,25 @@ check_link() {
   fi
 }
 
+# Like check_link but tolerates a regular file if its content matches the source.
+# Use for files that tools atomically rewrite (e.g. gws .encryption_key).
+check_link_or_content() {
+  local dest="$1" expected_src="${2%/}"
+  if [[ -L "$dest" ]]; then
+    if [[ "$(readlink "$dest" | sed 's:/$::')" != "$expected_src" ]]; then
+      drift "$dest points to $(readlink "$dest"), expected $expected_src"
+    fi
+  elif [[ -f "$dest" && -f "$expected_src" ]]; then
+    if ! cmp -s "$dest" "$expected_src"; then
+      drift "$dest content differs from $expected_src"
+    fi
+  elif [[ ! -e "$dest" ]]; then
+    drift "$dest does not exist"
+  else
+    drift "$dest is not a symlink"
+  fi
+}
+
 check_link "${HOME}/.zshrc"                                                    "${DOTFILES}/.zshrc"
 check_link "${HOME}/.tmux.conf"                                                "${DOTFILES}/.tmux.conf"
 check_link "${HOME}/.gitconfig"                                                "${DOTFILES}/.gitconfig"
@@ -189,7 +208,7 @@ check_link "${HOME}/.config/git/ignore"                                        "
 check_link "${HOME}/.config/fd/config"                                         "${DOTFILES}/.config/fd/config"
 check_link "${HOME}/.config/gcloud/configurations/config_default"              "${DOTFILES}/.config/gcloud/configurations/config_default"
 check_link "${HOME}/.config/gws/client_secret.json"                            "${PRIVATE}/gws/client_secret.json"
-check_link "${HOME}/.config/gws/.encryption_key"                               "${PRIVATE}/gws/.encryption_key"
+check_link_or_content "${HOME}/.config/gws/.encryption_key"                    "${PRIVATE}/gws/.encryption_key"
 check_link "${HOME}/.config/gws/credentials.enc"                               "${PRIVATE}/gws/credentials.enc"
 check_link "${HOME}/.claude/CLAUDE.md"                                         "${PRIVATE}/claude/CLAUDE.md"
 check_link "${HOME}/.claude/memory/MEMORY.md"                                  "${PRIVATE}/claude/memory/MEMORY.md"
@@ -444,7 +463,7 @@ section "Remote: Brewfile vs bootstrap"
 brew_remote_drift_count=${#DRIFT[@]}
 
 # Mac-only tools that shouldn't be on the droplet
-mac_only_tools="ccusage|cloc|dagu|doctl|duckdb|duti|ffmpeg|git-crypt|glow|googleworkspace-cli|imagemagick|mas|poppler|python@3.12|trash|tree|watch|yarn|yt-dlp|zsh-autosuggestions|zsh-syntax-highlighting|zsh|git"
+mac_only_tools="ccusage|cloc|dagu|doctl|duckdb|duti|ffmpeg|gemini-cli|git-crypt|glow|googleworkspace-cli|imagemagick|mas|poppler|python@3.12|trash|tree|watch|yarn|yt-dlp|zsh-autosuggestions|zsh-syntax-highlighting|zsh|git"
 
 # Extract CLI tool names from Brewfile (formulae only)
 brewfile_cli=$(grep '^brew ' "$BREWFILE" | sed 's/^brew "\(.*\)"/\1/' | grep -vE "^(${mac_only_tools})$" | sort)
