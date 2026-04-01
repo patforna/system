@@ -11,8 +11,8 @@ window-padding-color = extend
 # OSC 8 hyperlinks
 link-url = true
 
-# Quick terminal (global hotkey: Cmd+`)
-keybind = global:ctrl+space=toggle_quick_terminal
+# Quick terminal (global hotkey: Option+Space)
+keybind = global:alt+space=toggle_quick_terminal
 quick-terminal-position = center
 quick-terminal-screen = mouse
 quick-terminal-autohide = true
