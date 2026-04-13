@@ -1,6 +1,7 @@
 brew "atuin"
 brew "bat"
 brew "btop"
+brew "oven-sh/bun/bun"
 brew "ccusage"
 brew "cloc"
 brew "dagu"
