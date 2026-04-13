@@ -1,0 +1,5 @@
+schedule: "0 6 * * *"
+
+steps:
+  - name: workflow-digest
+    command: bash $HOME/github/system/scripts/dagu-digest.sh

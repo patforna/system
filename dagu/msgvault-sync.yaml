@@ -2,4 +2,4 @@ schedule: "0 9 * * *"
 
 steps:
   - name: msgvault-sync
-    command: msgvault sync patric.fornasier@gmail.com
+    command: $HOME/.local/bin/msgvault sync patric.fornasier@gmail.com
