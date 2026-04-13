@@ -55,7 +55,7 @@ Installs Homebrew, all packages from the Brewfile (formulae, casks, VS Code exte
 | Claude Code    | [`CLAUDE.md`](private/claude/CLAUDE.md), [`memory/MEMORY.md`](private/claude/memory/MEMORY.md), [`statusline-command.sh`](dotfiles/.claude/statusline-command.sh) |
 | Packages       | [`Brewfile`](Brewfile) — formulae, casks, VS Code extensions, uv tools, Mac App Store apps |
 | File assocs    | [`scripts/file-associations.conf`](scripts/file-associations.conf) |
-| Dagu           | [`dagu/`](dagu/) — drift-check, droplet-watchdog, msgvault-sync |
+| Dagu           | [`dagu/`](dagu/) — drift-check, droplet-watchdog, msgvault-sync, workflow-digest |
 
 Only config files are symlinked — never caches, auth tokens, or session data.
 

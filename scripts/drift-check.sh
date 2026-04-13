@@ -222,6 +222,7 @@ done
 check_link "${HOME}/Library/Application Support/Code/User/settings.json"       "${DOTFILES}/vscode-settings.json"
 check_link "${HOME}/Library/Application Support/Code/User/keybindings.json"    "${DOTFILES}/vscode-keybindings.json"
 check_link "${HOME}/.config/dagu/dags"                                         "${HOME}/github/system/dagu"
+check_link "${HOME}/.config/dagu/base.yaml"                                    "${DOTFILES}/.config/dagu/base.yaml"
 
 symlink_drifts=$(printf '%s\n' "${DRIFT[@]+"${DRIFT[@]}"}" | grep -c "symlink\|points to" 2>/dev/null || true)
 if [[ "$symlink_drifts" -eq 0 ]]; then
