@@ -95,6 +95,11 @@ if [[ -d "${PRIVATE}/skills" ]]; then
 fi
 echo ""
 
+# --- MacDown ---
+echo "--- MacDown ---"
+link "${PUBLIC}/macdown/styles/GitHub2 (Dark).css" "${HOME}/Library/Application Support/MacDown/Styles/GitHub2 (Dark).css"
+echo ""
+
 # --- VS Code ---
 echo "--- VS Code ---"
 link "${PUBLIC}/vscode-settings.json"              "${HOME}/Library/Application Support/Code/User/settings.json"
