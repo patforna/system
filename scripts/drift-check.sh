@@ -32,8 +32,8 @@ ok() { echo "  OK     $1"; }
 
 # --- Brew formulae ---
 section "Brew formulae"
-brewfile_formulae=$(grep '^brew ' "$BREWFILE" | sed 's/^brew "\(.*\)"/\1/' | sort)
-installed_leaves=$(brew leaves 2>/dev/null | sort)
+brewfile_formulae=$(grep '^brew ' "$BREWFILE" | sed 's/^brew "\(.*\)"/\1/' | sed 's|.*/||' | sort)
+installed_leaves=$(brew leaves 2>/dev/null | sed 's|.*/||' | sort)
 installed_all_formulae=$(brew list --formula 2>/dev/null | sort)
 formulae_drift_count=${#DRIFT[@]}
 
@@ -209,16 +209,11 @@ check_link "${HOME}/.config/fd/config"                                         "
 check_link "${HOME}/.config/gcloud/configurations/config_default"              "${DOTFILES}/.config/gcloud/configurations/config_default"
 check_link "${HOME}/.config/gws/client_secret.json"                            "${PRIVATE}/gws/client_secret.json"
 check_link_or_content "${HOME}/.config/gws/.encryption_key"                    "${PRIVATE}/gws/.encryption_key"
-check_link "${HOME}/.config/gws/credentials.enc"                               "${PRIVATE}/gws/credentials.enc"
+check_link_or_content "${HOME}/.config/gws/credentials.enc"                     "${PRIVATE}/gws/credentials.enc"
 check_link "${HOME}/.claude/CLAUDE.md"                                         "${PRIVATE}/claude/CLAUDE.md"
 check_link "${HOME}/.claude/memory/MEMORY.md"                                  "${PRIVATE}/claude/memory/MEMORY.md"
 check_link "${HOME}/.claude/statusline-command.sh"                             "${DOTFILES}/.claude/statusline-command.sh"
-# Skills — check each skill dir is symlinked from private/skills/
-for skill_dir in "${PRIVATE}/skills"/*/; do
-  [[ -d "$skill_dir" ]] || continue
-  skill_name=$(basename "$skill_dir")
-  check_link "${HOME}/.claude/skills/${skill_name}" "$skill_dir"
-done
+check_link "${HOME}/.claude/skills"                                              "${DOTFILES}/.claude/skills"
 check_link "${HOME}/Library/Application Support/Code/User/settings.json"       "${DOTFILES}/vscode-settings.json"
 check_link "${HOME}/Library/Application Support/Code/User/keybindings.json"    "${DOTFILES}/vscode-keybindings.json"
 check_link "${HOME}/.config/dagu/dags"                                         "${HOME}/github/system/dagu"
@@ -467,7 +462,7 @@ brew_remote_drift_count=${#DRIFT[@]}
 mac_only_tools="ccusage|cloc|dagu|doctl|duckdb|duti|ffmpeg|gemini-cli|git-crypt|glow|googleworkspace-cli|imagemagick|mas|poppler|python@3.12|trash|tree|watch|yarn|yt-dlp|zsh-autosuggestions|zsh-syntax-highlighting|zsh|git"
 
 # Extract CLI tool names from Brewfile (formulae only)
-brewfile_cli=$(grep '^brew ' "$BREWFILE" | sed 's/^brew "\(.*\)"/\1/' | grep -vE "^(${mac_only_tools})$" | sort)
+brewfile_cli=$(grep '^brew ' "$BREWFILE" | sed 's/^brew "\(.*\)"/\1/' | sed 's|.*/||' | grep -vE "^(${mac_only_tools})$" | sort)
 
 # Extract what bootstrap.sh installs (apt + gh_install + curl + special)
 bootstrap_tools=$(

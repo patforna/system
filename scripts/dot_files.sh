@@ -39,7 +39,6 @@ echo ""
 echo "--- Directories ---"
 ensure_local_dir "${HOME}/.config"
 ensure_local_dir "${HOME}/.claude"
-ensure_local_dir "${HOME}/.claude/skills"
 echo ""
 
 # --- Shell & Terminal ---
@@ -85,13 +84,10 @@ link "${PRIVATE}/claude/CLAUDE.md"                 "${HOME}/.claude/CLAUDE.md"
 link "${PRIVATE}/claude/memory/MEMORY.md"          "${HOME}/.claude/memory/MEMORY.md"
 link "${PUBLIC}/.claude/statusline-command.sh"     "${HOME}/.claude/statusline-command.sh"
 
-# Skills — symlink each skill dir from private location
-if [[ -d "${PRIVATE}/skills" ]]; then
-  for skill in "${PRIVATE}/skills"/*/; do
-    skill_name=$(basename "$skill")
-    ln -sfn "$skill" "${HOME}/.claude/skills/${skill_name}"
-    echo "  OK    ~/.claude/skills/${skill_name}"
-  done
+# Skills — symlink directory (individual skill symlinks are tracked in dotfiles)
+if [[ -d "${PUBLIC}/.claude/skills" ]]; then
+  ln -sfn "${PUBLIC}/.claude/skills" "${HOME}/.claude/skills"
+  echo "  OK    ~/.claude/skills"
 fi
 echo ""
 

@@ -140,6 +140,13 @@ if ! command -v uv &>/dev/null; then
 else
   echo "  SKIP  uv"
 fi
+
+if ! command -v bun &>/dev/null; then
+  echo "  GET   bun"
+  curl -fsSL https://bun.sh/install | bash > /dev/null 2>&1
+else
+  echo "  SKIP  bun"
+fi
 echo ""
 
 # --- Claude Code ---
