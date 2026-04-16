@@ -40,5 +40,16 @@
     "key": "ctrl+l",
     "command": "-expandLineSelection",
     "when": "textInputFocus"
+  },
+  {
+    "key": "shift+cmd+v",
+    "command": "runCommands",
+    "args": {
+      "commands": [
+        "markdown.showPreview",
+        "markdown.preview.toggleLock"
+      ]
+    },
+    "when": "editorLangId == markdown"
   }
 ]
