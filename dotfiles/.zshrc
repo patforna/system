@@ -59,7 +59,7 @@ alias g='rg'
 alias grep='rg'
 alias vim='nvim'
 alias lg='lazygit'
-alias md='glow'
+alias md='macdown'
 
 # eza
 alias ls="eza --group-directories-first --icons"
