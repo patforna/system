@@ -60,6 +60,7 @@ alias grep='rg'
 alias vim='nvim'
 alias lg='lazygit'
 alias md='macdown'
+alias clear='clear && tmux clear-history'
 
 # eza
 alias ls="eza --group-directories-first --icons"
