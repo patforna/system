@@ -117,7 +117,8 @@ cat > "$HOME/.claude/settings.json" <<'SETTINGS'
       "type": "http",
       "url": "https://mcp.notion.com/mcp"
     }
-  }
+  },
+  "skipAutoPermissionPrompt": true
 }
 SETTINGS
 echo "  OK    ~/.claude/settings.json"
