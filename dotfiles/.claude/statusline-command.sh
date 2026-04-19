@@ -10,7 +10,7 @@ CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 
 # --- Catppuccin Mocha palette (truecolor) ---
 C_SKY="\033[38;2;137;220;235m"      # #89dceb — cwd (matches pane titles)
-C_SUBTEXT1="\033[38;2;186;194;222m"  # #bac2de — model name
+C_OVERLAY2="\033[38;2;147;153;178m"  # #9399b2 — model name
 C_GREEN="\033[38;2;166;227;161m"    # #a6e3a1 — bar low
 C_YELLOW="\033[38;2;249;226;175m"   # #f9e2af — bar mid
 C_RED="\033[38;2;243;139;168m"      # #f38ba8 — bar high
@@ -56,7 +56,7 @@ section0=""
 
 # --- Section 1: Model ---
 section1=""
-[[ -n "$display_name" && "$display_name" != "null" ]] && section1="🤖 ${C_SUBTEXT1}${display_name}${C_RESET}"
+[[ -n "$display_name" && "$display_name" != "null" ]] && section1="🤖 ${C_OVERLAY2}${display_name}${C_RESET}"
 
 # --- Section 2: Context Window ---
 section2=""
