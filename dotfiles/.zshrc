@@ -141,6 +141,8 @@ export GITHUB_PERSONAL_ACCESS_TOKEN="${GITHUB_PERSONAL_ACCESS_TOKEN:-$(gh auth t
 
 # --- Ghostty shell integration ---
 if [ -n "$GHOSTTY_RESOURCES_DIR" ]; then
+  # Inside tmux, disable Ghostty's title feature so only Claude Code sets pane titles
+  [[ -n "$TMUX" ]] && GHOSTTY_SHELL_FEATURES="${GHOSTTY_SHELL_FEATURES//title/}"
   source "$GHOSTTY_RESOURCES_DIR/shell-integration/zsh/ghostty-integration"
 fi
 
