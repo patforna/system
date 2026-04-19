@@ -8,6 +8,16 @@ USAGE_LOCK="${_TMPDIR}/claude-usage-cache.lock"
 USAGE_TTL=60
 CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 
+# --- Catppuccin Mocha palette (truecolor) ---
+C_SKY="\033[38;2;137;220;235m"      # #89dceb — cwd (matches pane titles)
+C_SUBTEXT1="\033[38;2;186;194;222m"  # #bac2de — model name
+C_GREEN="\033[38;2;166;227;161m"    # #a6e3a1 — bar low
+C_YELLOW="\033[38;2;249;226;175m"   # #f9e2af — bar mid
+C_RED="\033[38;2;243;139;168m"      # #f38ba8 — bar high
+C_OVERLAY="\033[38;2;108;112;134m"  # #6c7086 — empty bar segments
+C_SUBTLE="\033[38;2;166;173;200m"   # #a6adc8 — secondary text
+C_RESET="\033[0m"
+
 # --- Bar renderer ---
 render_bar() {
     local pct=$1 width=10
@@ -16,13 +26,14 @@ render_bar() {
     local filled=$((pct * width / 100))
     local empty=$((width - filled))
     local color
-    if ((pct >= 80)); then color="\033[31m"
-    elif ((pct >= 60)); then color="\033[33m"
-    else color="\033[32m"; fi
+    if ((pct >= 80)); then color="$C_RED"
+    elif ((pct >= 60)); then color="$C_YELLOW"
+    else color="$C_GREEN"; fi
     local bar=""
     for ((i=0; i<filled; i++)); do bar+="▓"; done
-    for ((i=0; i<empty; i++)); do bar+="░"; done
-    printf '%b' "${color}${bar} ${pct}%\033[0m"
+    local empty_bar=""
+    for ((i=0; i<empty; i++)); do empty_bar+="░"; done
+    printf '%b' "${color}${bar}${C_OVERLAY}${empty_bar}${C_RESET} ${color}${pct}%${C_RESET}"
 }
 
 # --- Read stdin & parse in one jq call ---
@@ -41,11 +52,11 @@ cwd="${cwd/#$HOME/~}"
 
 # --- Section 0: CWD ---
 section0=""
-[[ -n "$cwd" && "$cwd" != "null" ]] && section0="📁 \033[36m${cwd}\033[0m"
+[[ -n "$cwd" && "$cwd" != "null" ]] && section0="📁 ${C_SKY}${cwd}${C_RESET}"
 
 # --- Section 1: Model ---
 section1=""
-[[ -n "$display_name" && "$display_name" != "null" ]] && section1="\033[32m🤖 ${display_name}\033[0m"
+[[ -n "$display_name" && "$display_name" != "null" ]] && section1="🤖 ${C_SUBTEXT1}${display_name}${C_RESET}"
 
 # --- Section 2: Context Window ---
 section2=""
@@ -108,11 +119,11 @@ if [[ -f "$USAGE_CACHE" ]]; then
             if [[ -n "$reset_epoch" ]]; then
                 remaining=$(( reset_epoch - $(date +%s) ))
                 if ((remaining <= 0)); then
-                    reset_text=" (resetting…)"
+                    reset_text=" ${C_SUBTLE}(resetting…)${C_RESET}"
                 else
                     rh=$((remaining / 3600))
                     rmins=$(( (remaining % 3600) / 60 ))
-                    reset_text=" Resets in ${rh}h ${rmins}m"
+                    reset_text=" ${C_SUBTLE}Resets in ${rh}h ${rmins}m${C_RESET}"
                 fi
             fi
         fi
