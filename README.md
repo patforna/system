@@ -74,6 +74,16 @@ Custom statusline rendered by [`statusline-command.sh`](dotfiles/.claude/statusl
 
 Usage data is fetched from Anthropic's OAuth endpoint using Claude Code's own credentials (macOS Keychain), cached for 60s, and refreshed in the background to keep render time under 25ms.
 
+## Utilities
+
+`scripts/` ships a few handy CLIs on `$PATH`:
+
+| Command | Purpose |
+|---------|---------|
+| `find-session <hash>` | Locate the Claude Code session that made a given git commit. Matches the `[branch hash]` signature `git commit` prints; falls back to timestamp-sorted hash mentions when the signature wasn't captured (e.g. subagent/headless commits). Pass `--repo` to narrow to the current repo's sessions. |
+| `drift-check.sh`      | Detect untracked dotfiles, Brewfile drift, and Mac ↔ Linux config divergence. Runs daily via Dagu. |
+| `dev-up` / `dev-down` | Bring the remote dev droplet up/down and sync local SSH config. |
+
 ## Remote box
 
 See [`remote/README.md`](remote/README.md) for the full playbook.
