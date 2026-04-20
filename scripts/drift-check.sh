@@ -367,10 +367,13 @@ fi
 section "Remote: Tmux config"
 tmux_drift_count=${#DRIFT[@]}
 
-# Extract functional lines (skip comments, blanks, known platform diffs)
+# Extract functional lines (skip comments, blanks, known platform diffs).
+# Strip inline comments and collapse internal whitespace so alignment spacing
+# and documentation comments don't trigger drift.
 tmux_filter='^\s*$|^#|pbcopy|copy-pipe-and-cancel|copy-selection-and-cancel|default-command|@plugin|@continuum|run .*tpm'
-mac_tmux=$(grep -vE "$tmux_filter" "${DOTFILES}/.tmux.conf" | sed 's/[[:space:]]*$//' | sort)
-remote_tmux=$(grep -vE "$tmux_filter" "${REMOTE}/tmux.conf" | sed 's/[[:space:]]*$//' | sort)
+tmux_normalize() { strip_comments | sed -E 's/[[:space:]]+/ /g'; }
+mac_tmux=$(grep -vE "$tmux_filter" "${DOTFILES}/.tmux.conf" | tmux_normalize | sort)
+remote_tmux=$(grep -vE "$tmux_filter" "${REMOTE}/tmux.conf" | tmux_normalize | sort)
 
 while IFS= read -r line; do
   [[ -z "$line" ]] && continue
