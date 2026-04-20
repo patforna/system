@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+# find-session - Locate the Claude Code session that made a given git commit.
+#
+# Searches ~/.claude/projects/ for sessions whose transcript contains the
+# `[<branch> <hash>]` signature that `git commit` prints on success. That's
+# the authoring tell — plain hash mentions from `git log` don't have brackets.
+#
+# If the authoring signature isn't found (e.g. the commit was made by a
+# subagent/headless call whose stdout wasn't captured), falls back to listing
+# every session that mentions the hash, split by whether the session started
+# before or after the commit.
+#
+# Usage:
+#   find-session <hash>          # search all Claude projects (default)
+#   find-session <hash> --repo   # narrow to the current git repo's project
+#
+# Exit codes:
+#   0  authoring session found
+#   2  hash not found, or only post-commit references (ambiguous)
+#   1  usage / environment error
+
+set -euo pipefail
+
+HASH="${1:-}"
+SCOPE="${2:---all}"
+
+if [[ -z "$HASH" ]]; then
+    echo "usage: find-session <hash> [--repo]" >&2
+    exit 1
+fi
+
+PROJECTS_DIR="$HOME/.claude/projects"
+
+case "$SCOPE" in
+    --all)
+        SEARCH_ROOT="$PROJECTS_DIR" ;;
+    --repo)
+        REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || {
+            echo "--repo requires being inside a git repo" >&2
+            exit 1
+        }
+        SLUG="${REPO_ROOT//\//-}"
+        SEARCH_ROOT="$PROJECTS_DIR/$SLUG"
+        [[ -d "$SEARCH_ROOT" ]] || { echo "no Claude sessions for this repo" >&2; exit 1; } ;;
+    *)
+        echo "unknown flag: $SCOPE" >&2; exit 1 ;;
+esac
+
+# Author-time cutoff for distinguishing authoring vs references.
+COMMIT_TIME=$(git show -s --format=%aI "$HASH" 2>/dev/null || true)
+
+# Extract (session_id, start_ts) from a transcript file. Start ts comes
+# from the first user message (parentUuid==null, type==user).
+session_start_ts() {
+    local file=$1
+    rg -m1 --no-messages '"parentUuid":null[^}]*"type":"user"' "$file" 2>/dev/null \
+        | jq -r '.timestamp // empty' 2>/dev/null || true
+}
+
+print_session() {
+    local file=$1 label=$2
+    local session
+    session=$(basename "$file" .jsonl)
+    local first_line
+    first_line=$(rg -m1 --no-messages '"parentUuid":null[^}]*"type":"user"' "$file" 2>/dev/null || true)
+    local ts="" prompt=""
+    if [[ -n "$first_line" ]]; then
+        ts=$(echo "$first_line" | jq -r '.timestamp // empty' 2>/dev/null || true)
+        prompt=$(echo "$first_line" | jq -r '
+            .message.content
+            | if type == "array" then (.[0].text // .[0].content // "") else . end
+            | split("\n")[0:3] | join("\n")
+        ' 2>/dev/null || true)
+    fi
+    echo "[$label] $session"
+    [[ -n "$ts" ]]     && echo "  started: $ts"
+    [[ -n "$prompt" ]] && printf '  prompt:  %s\n' "${prompt//$'\n'/$'\n           '}"
+    echo "  resume:  claude --resume $session"
+    echo
+}
+
+# Primary search: authoring signature.
+SIG_PATTERN="\[[A-Za-z0-9/_.-]+ ${HASH}[0-9a-f]*\]"
+SIG_MATCHES=$(rg -l --no-messages -- "$SIG_PATTERN" "$SEARCH_ROOT" 2>/dev/null || true)
+
+# Partition signature matches by commit-time cutoff.
+AUTHORED=()
+POST_AUTHORED=()
+while IFS= read -r file; do
+    [[ -z "$file" ]] && continue
+    ts=$(session_start_ts "$file")
+    if [[ -n "$COMMIT_TIME" && -n "$ts" && "$ts" > "$COMMIT_TIME" ]]; then
+        POST_AUTHORED+=("$file")
+    else
+        AUTHORED+=("$file")
+    fi
+done <<< "$SIG_MATCHES"
+
+if [[ ${#AUTHORED[@]} -gt 0 ]]; then
+    for f in "${AUTHORED[@]}"; do print_session "$f" "authoring"; done
+    [[ ${#POST_AUTHORED[@]} -gt 0 ]] \
+        && echo "(skipped ${#POST_AUTHORED[@]} post-commit session(s) that echoed the signature)"
+    exit 0
+fi
+
+# Fallback: no authoring signature. List all hash mentions, split by time.
+REF_MATCHES=$(rg -l --no-messages -- "$HASH" "$SEARCH_ROOT" 2>/dev/null || true)
+if [[ -z "$REF_MATCHES" ]]; then
+    echo "no sessions mention $HASH." >&2
+    exit 2
+fi
+
+echo "no authoring signature found for $HASH — commit may have been made"
+echo "via tooling that didn't surface output to the transcript. Candidates:"
+echo
+
+PRE_COMMIT=()
+POST_COMMIT=()
+while IFS= read -r file; do
+    [[ -z "$file" ]] && continue
+    ts=$(session_start_ts "$file")
+    if [[ -n "$COMMIT_TIME" && -n "$ts" && "$ts" > "$COMMIT_TIME" ]]; then
+        POST_COMMIT+=("$file")
+    else
+        PRE_COMMIT+=("$file")
+    fi
+done <<< "$REF_MATCHES"
+
+for f in "${PRE_COMMIT[@]}";  do print_session "$f" "pre-commit"; done
+for f in "${POST_COMMIT[@]}"; do print_session "$f" "post-commit"; done
+exit 2
