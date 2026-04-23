@@ -23,16 +23,6 @@ bindkey -v               # vi mode
 bindkey '^A' beginning-of-line   # Ctrl-A: jump to line start
 bindkey '^E' end-of-line         # Ctrl-E: jump to line end
 
-# Ctrl-L: clear screen + tmux scrollback (not just default clear-screen)
-# `command clear` bypasses the `clear` alias below to avoid re-parse recursion on re-source.
-_clear_and_tmux_history() {
-  command clear
-  [[ -n $TMUX ]] && tmux clear-history
-  zle reset-prompt
-}
-zle -N _clear_and_tmux_history
-bindkey '^L' _clear_and_tmux_history
-
 # --- Usability ---
 setopt autocd            # `cd dir` → just `dir`
 setopt correct            # spellcheck commands
@@ -70,7 +60,6 @@ alias grep='rg'
 alias vim='nvim'
 alias lg='lazygit'
 alias md='macdown'
-alias clear='command clear; [[ -n $TMUX ]] && tmux clear-history'
 
 # eza
 alias ls="eza --group-directories-first --icons"
