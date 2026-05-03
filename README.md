@@ -81,7 +81,7 @@ Usage data is fetched from Anthropic's OAuth endpoint using Claude Code's own cr
 | Command | Purpose |
 |---------|---------|
 | `find-session <hash>` | Locate the Claude Code session that made a given git commit. Matches the `[branch hash]` signature `git commit` prints; falls back to timestamp-sorted hash mentions when the signature wasn't captured (e.g. subagent/headless commits). Pass `--repo` to narrow to the current repo's sessions. |
-| `drift-check.sh`      | Detect untracked dotfiles, Brewfile drift, and Mac ↔ Linux config divergence. Runs daily via Dagu. |
+| `drift-check`         | Detect untracked dotfiles, Brewfile drift, and Mac ↔ Linux config divergence. Runs daily via Dagu. Exits 1 on drift; `--notify` files a GitHub issue and exits 0. |
 | `dev-up` / `dev-down` | Bring the remote dev droplet up/down and sync local SSH config. |
 
 ## Remote box
@@ -105,7 +105,7 @@ brew bundle add --uv <package>               # Python CLI tool (via uv)
 dot_files.sh
 
 # Check for drift manually (includes Mac ↔ Linux remote config drift)
-drift-check.sh
+drift-check
 ```
 
 ## Private files (git-crypt)
