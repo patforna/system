@@ -43,6 +43,8 @@ source <(fzf --zsh)
 
 eval "$(atuin init zsh --disable-up-arrow)"
 
+eval "$(try init ~/experiments)"
+
 # --- Functions ---
 c() { pbcopy < "$1"; }
 p() { pbpaste > "$1"; }
