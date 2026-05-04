@@ -35,7 +35,7 @@ Brewfile               # brew packages, casks, VS Code extensions, uv tools, Mac
 ~/github/system/scripts/bootstrap.sh
 ```
 
-Installs Homebrew, all packages from the Brewfile (formulae, casks, VS Code extensions, uv tools, Mac App Store apps), Claude Code, unlocks git-crypt, symlinks dotfiles, configures macOS defaults, sets up login items (ActivityWatch, Rectangle), and starts Dagu for scheduled workflows.
+Installs Homebrew, all packages from the Brewfile (formulae, casks, VS Code extensions, uv tools, Mac App Store apps), Claude Code, msgvault. Verifies git-crypt is unlocked (prompts manual step otherwise), symlinks dotfiles, writes Claude Code settings, configures macOS defaults, sets up login items, and reminds you to start Dagu.
 
 ## What's managed
 
@@ -52,7 +52,7 @@ Installs Homebrew, all packages from the Brewfile (formulae, casks, VS Code exte
 | Monitor        | [`.config/btop/btop.conf`](dotfiles/.config/btop/btop.conf) |
 | GitHub CLI     | [`.config/gh/config.yml`](dotfiles/.config/gh/config.yml) |
 | fd             | [`.config/fd/config`](dotfiles/.config/fd/config) |
-| Claude Code    | [`CLAUDE.md`](private/claude/CLAUDE.md), [`memory/MEMORY.md`](private/claude/memory/MEMORY.md), [`statusline-command.sh`](dotfiles/.claude/statusline-command.sh) |
+| Claude Code    | [`CLAUDE.md`](private/claude/CLAUDE.md), [`memory/MEMORY.md`](private/claude/memory/MEMORY.md), [`skills/`](dotfiles/.claude/skills/), [`statusline-command.sh`](dotfiles/.claude/statusline-command.sh) |
 | Packages       | [`Brewfile`](Brewfile) — formulae, casks, VS Code extensions, uv tools, Mac App Store apps |
 | File assocs    | [`scripts/file-associations.conf`](scripts/file-associations.conf) |
 | Dagu           | [`dagu/`](dagu/) — drift-check, droplet-watchdog, msgvault-sync, workflow-digest |
@@ -63,7 +63,7 @@ Only config files are symlinked — never caches, auth tokens, or session data.
 
 Custom statusline rendered by [`statusline-command.sh`](dotfiles/.claude/statusline-command.sh):
 
-> 📁 ~/github/system | 🤖 Opus 4.6 (1M) | 🧠 ▓▓░░░░░░░░ 15% | 🔥 ▓▓▓▓░░░░░░ 42% Resets in 2h 15m
+> 📁 ~/github/system | 🤖 Opus 4.7 (1M) | 🧠 ▓▓░░░░░░░░ 15% | 🔥 ▓▓▓▓░░░░░░ 42% Resets in 2h 15m
 
 | Section | Source | Description |
 |---------|--------|-------------|
@@ -110,14 +110,9 @@ drift-check
 
 ## Private files (git-crypt)
 
-The `private/` directory is encrypted on GitHub and decrypted locally. It contains:
+The `private/` directory is encrypted on GitHub and decrypted locally.
 
-- `claude/CLAUDE.md` — global Claude Code instructions
-- `claude/memory/MEMORY.md` — Claude Code auto-memory
-- `skills/` — Claude Code skill definitions (trackid, monthly-spending, ibkr-stocks-update)
-- `scripts/` — private utility scripts (tid, tldr)
-- `ssh-config.local` — box IP (written by `dev-up`)
-- `droplet-watchdog.conf` — notification email
+<!-- Do not list files or content here due to their sensitivity -->
 
 ### Managing encrypted files
 
