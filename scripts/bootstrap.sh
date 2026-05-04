@@ -132,7 +132,7 @@ if command -v dagu &>/dev/null; then
   else
     echo "  NOTE  Start Dagu with: dagu start-all"
   fi
-  echo "  Workflows: drift-check, droplet-watchdog"
+  echo "  Workflows: drift-check, droplet-watchdog, msgvault-sync, workflow-digest"
 else
   echo "  SKIP  dagu not installed (check Brewfile)"
 fi
