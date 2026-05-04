@@ -227,10 +227,20 @@ cat > "$HOME/.claude/settings.json" <<'SETTINGS'
   },
   "enabledPlugins": {
     "context7@claude-plugins-official": true,
-    "github@claude-plugins-official": true
+    "github@claude-plugins-official": true,
+    "skill-creator@claude-plugins-official": true
+  },
+  "extraKnownMarketplaces": {
+    "anthropic-agent-skills": {
+      "source": {
+        "source": "github",
+        "repo": "anthropics/skills"
+      }
+    }
   },
   "effortLevel": "high",
   "skipDangerousModePermissionPrompt": true,
+  "editorMode": "vim",
   "mcpServers": {
     "notion": {
       "type": "http",

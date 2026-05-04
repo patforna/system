@@ -352,6 +352,10 @@ mac_tools=$(grep -E '^eval |^source <' "${DOTFILES}/.zshrc" | sed 's/.*(\(.*\) .
 remote_tools=$(grep -E '^eval |^source <' "${REMOTE}/zshrc" | sed 's/.*(\(.*\) .*/\1/; s/.*<(\(.*\) .*/\1/' | grep -oE '[a-z]+' | sort -u)
 while IFS= read -r tool; do
   [[ -z "$tool" ]] && continue
+  # Mac-only tools (see mac_only_tools list in 'Brewfile vs bootstrap' section)
+  case "$tool" in
+    try) continue ;;
+  esac
   drift "zshrc: tool init '$tool' missing from remote"
 done < <(comm -23 <(echo "$mac_tools") <(echo "$remote_tools"))
 
@@ -447,8 +451,10 @@ mac_settings="${HOME}/.claude/settings.json"
 remote_settings=$(sed -n '/^cat.*<<.*SETTINGS/,/^SETTINGS$/p' "${REMOTE}/bootstrap.sh" | sed '1d;$d')
 
 if [[ -f "$mac_settings" && -n "$remote_settings" ]] && command -v jq &>/dev/null; then
-  mac_normalized=$(jq -S '.' "$mac_settings" 2>/dev/null || true)
-  remote_normalized=$(echo "$remote_settings" | jq -S '.' 2>/dev/null || true)
+  # Strip keys that are intentionally remote-only before comparing
+  jq_strip='del(.skipAutoPermissionPrompt)'
+  mac_normalized=$(jq -S "$jq_strip" "$mac_settings" 2>/dev/null || true)
+  remote_normalized=$(echo "$remote_settings" | jq -S "$jq_strip" 2>/dev/null || true)
   if [[ -n "$mac_normalized" && -n "$remote_normalized" ]]; then
     diff_output=$(diff <(echo "$mac_normalized") <(echo "$remote_normalized") || true)
     if [[ -n "$diff_output" ]]; then
