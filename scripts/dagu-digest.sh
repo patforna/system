@@ -27,7 +27,16 @@ rows=""
 for f in "$DAGS_DIR"/*.yaml; do
   dag=$(basename "$f" .yaml)
 
-  read -r runs ok failed < <("$DAGU" history "$dag" --last 24h --format csv 2>/dev/null | awk -F',' '
+  # Treat DAGs with a non-wildcard day-of-week as weekly: check 7d, not 24h.
+  schedule=$(awk -F'"' '/^schedule:/ {print $2; exit}' "$f")
+  dow=$(echo "$schedule" | awk '{print $5}')
+  if [[ -n "$dow" && "$dow" != "*" ]]; then
+    window="7d"
+  else
+    window="24h"
+  fi
+
+  read -r runs ok failed < <("$DAGU" history "$dag" --last "$window" --format csv 2>/dev/null | awk -F',' '
     NR>1 {
       total++
       if ($3 == "Succeeded") ok++
@@ -43,12 +52,16 @@ for f in "$DAGS_DIR"/*.yaml; do
     marker="FAIL"
     total_failed=$((total_failed + failed))
   elif (( runs == 0 )) && [[ "$dag" != "$SELF" ]]; then
-    marker="STALE"
-    total_stale=$((total_stale + 1))
+    if [[ -z "$last_line" ]]; then
+      marker="PEND"
+    else
+      marker="STALE"
+      total_stale=$((total_stale + 1))
+    fi
   fi
 
-  rows+=$(printf '[%-5s] %-20s 24h: %d runs, %d ok, %d fail   latest: %s\n' \
-    "$marker" "$dag" "$runs" "$ok" "$failed" "$last_line")
+  rows+=$(printf '[%-5s] %-20s %-3s: %d runs, %d ok, %d fail   latest: %s\n' \
+    "$marker" "$dag" "$window" "$runs" "$ok" "$failed" "$last_line")
   rows+=$'\n'
 done
 
