@@ -1,0 +1,5 @@
+schedule: "0 18 * * 0"
+
+steps:
+  - name: jobs-digest
+    command: bash "${HOME}/github/system/scripts/jobs-digest.sh"
