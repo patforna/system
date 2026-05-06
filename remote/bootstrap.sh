@@ -52,7 +52,7 @@ echo "--- apt packages ---"
 sudo apt-get update -qq
 sudo apt-get install -y -qq \
   zsh tmux neovim git ripgrep bat fd-find btop jq curl unzip build-essential \
-  zsh-autosuggestions zsh-syntax-highlighting
+  zsh-autosuggestions zsh-syntax-highlighting shellcheck
 
 # Ubuntu ships bat as "batcat" and fd as "fdfind" — create symlinks
 sudo ln -sf /usr/bin/batcat /usr/local/bin/bat 2>/dev/null || true
@@ -86,6 +86,7 @@ echo ""
 
 # --- Tools from GitHub releases ---
 echo "--- GitHub releases ---"
+gh_install "rhysd/actionlint"    "actionlint_.*_linux_${ARCH}\\.tar\\.gz"            actionlint
 gh_install "junegunn/fzf"        "fzf-.*-linux_${ARCH}\\.tar\\.gz"                   fzf
 gh_install "dandavison/delta"    "delta-.*-${ARCH_GH}-unknown-linux-musl\\.tar\\.gz"  delta
 gh_install "jesseduffield/lazygit" "lazygit_.*_linux_${ARCH_GH}\\.tar\\.gz"           lazygit
