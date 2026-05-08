@@ -88,14 +88,16 @@ Usage data is fetched from Anthropic's OAuth endpoint using Claude Code's own cr
 
 Local [Dagu](https://dagu.cloud/) instance runs the schedules in [`dagu/`](dagu/). The Mac launchd job starts Dagu on login; the UI is at <http://localhost:8080>.
 
-| DAG                | Schedule      | Cadence  | What it does                                                                              |
-|--------------------|---------------|----------|-------------------------------------------------------------------------------------------|
-| `msgvault-sync`    | `0 9 * * *`   | Daily    | `msgvault sync` of the configured Gmail account                                           |
-| `drift-check`      | `0 10 * * *`  | Daily    | Runs [`scripts/drift-check`](scripts/drift-check) `--notify` to flag system-repo drift    |
-| `droplet-watchdog` | `0 */4 * * *` | 4-hourly | Emails + macOS-notifies if the `dev` DigitalOcean droplet has been up >24h                |
-| `workflow-digest`  | `0 6 * * *`   | Daily    | [`dagu-digest.sh`](scripts/dagu-digest.sh) — summarises 24h (or 7d for weekly DAGs) status of every DAG, mails it |
-| `jobs-digest`      | `0 18 * * 0`  | Weekly   | Vets last 7d of `label:jobs` mail via `claude -p` against target-role criteria; HTML email |
-| `tech-news-digest` | `0 18 * * 0`  | Weekly   | Generates two formats (A=tiered, B=HN-ranked) from `label:tech-news` mail, two emails     |
+| DAG                | Cadence                          | What it does                                                                                  |
+|--------------------|----------------------------------|-----------------------------------------------------------------------------------------------|
+| `msgvault-sync`    | Daily at 09:00                   | `msgvault sync` of the configured Gmail account                                               |
+| `drift-check`      | Daily at 10:00                   | Runs [`scripts/drift-check`](scripts/drift-check) `--notify` to flag system-repo drift        |
+| `droplet-watchdog` | Every 4 hours (00:00, 04:00, …)  | Emails + macOS-notifies if the `dev` DigitalOcean droplet has been up >24h                    |
+| `workflow-digest`  | Daily at 06:00                   | [`dagu-digest.sh`](scripts/dagu-digest.sh) — summarises 24h (7d for weekly DAGs) status, mails it |
+| `jobs-digest`      | Sunday at 18:00                  | Vets last 7d of `label:jobs` mail via `claude -p` against target-role criteria; HTML email    |
+| `tech-news-digest` | Sunday at 18:00                  | Generates two formats (A=tiered, B=HN-ranked) from `label:tech-news` mail, two emails         |
+
+Times are local (Europe/Zurich).
 
 ### Email signals
 
