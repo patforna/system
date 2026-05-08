@@ -90,7 +90,7 @@ Local [Dagu](https://dagu.cloud/) instance runs the schedules in [`dagu/`](dagu/
 
 | DAG                | Schedule      | Cadence  | What it does                                                                              |
 |--------------------|---------------|----------|-------------------------------------------------------------------------------------------|
-| `msgvault-sync`    | `0 9 * * *`   | Daily    | `msgvault sync` of the configured Gmail account                                             |
+| `msgvault-sync`    | `0 9 * * *`   | Daily    | `msgvault sync` of the configured Gmail account                                           |
 | `drift-check`      | `0 10 * * *`  | Daily    | Runs [`scripts/drift-check`](scripts/drift-check) `--notify` to flag system-repo drift    |
 | `droplet-watchdog` | `0 */4 * * *` | 4-hourly | Emails + macOS-notifies if the `dev` DigitalOcean droplet has been up >24h                |
 | `workflow-digest`  | `0 6 * * *`   | Daily    | [`dagu-digest.sh`](scripts/dagu-digest.sh) — summarises 24h (or 7d for weekly DAGs) status of every DAG, mails it |
