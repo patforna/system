@@ -127,11 +127,14 @@ catchup_window: "6h"
 #   mail_on_error: true
 
 # -- Lifecycle Handlers --
-# Inherited by all DAGs. handler_on.failure emails on any DAG failure
-# via scripts/dagu-notify-fail.sh (uses NOTIFY_EMAIL from private conf).
+# Inherited by all DAGs. handler_on.failure invokes a local Claude Code session
+# via scripts/dagu-autofix.sh, which classifies the failure as transient,
+# fixable, or escalated. Fixable failures get committed to main directly;
+# escalations email NOTIFY_EMAIL. Outcomes are written to
+# ~/.local/state/dagu-autofix.jsonl so the daily digest can show them.
 handler_on:
   failure:
-    command: bash $HOME/github/system/scripts/dagu-notify-fail.sh
+    command: bash $HOME/github/system/scripts/dagu-autofix.sh
 
 # -- Email Notifications --
 # smtp:

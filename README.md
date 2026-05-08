@@ -55,7 +55,7 @@ Installs Homebrew, all packages from the Brewfile (formulae, casks, VS Code exte
 | Claude Code    | [`CLAUDE.md`](private/claude/CLAUDE.md), [`memory/MEMORY.md`](private/claude/memory/MEMORY.md), [`skills/`](dotfiles/.claude/skills/), [`statusline-command.sh`](dotfiles/.claude/statusline-command.sh) |
 | Packages       | [`Brewfile`](Brewfile) — formulae, casks, VS Code extensions, uv tools, Mac App Store apps |
 | File assocs    | [`scripts/file-associations.conf`](scripts/file-associations.conf) |
-| Dagu           | [`dagu/`](dagu/) — drift-check, droplet-watchdog, msgvault-sync, workflow-digest, tech-news-digest, jobs-digest |
+| Dagu           | [`dagu/`](dagu/) — see [Dagu workflows](#dagu-workflows) below |
 
 Only config files are symlinked — never caches, auth tokens, or session data.
 
@@ -81,8 +81,52 @@ Usage data is fetched from Anthropic's OAuth endpoint using Claude Code's own cr
 | Command | Purpose |
 |---------|---------|
 | `find-session <hash>` | Locate the Claude Code session that made a given git commit. Matches the `[branch hash]` signature `git commit` prints; falls back to timestamp-sorted hash mentions when the signature wasn't captured (e.g. subagent/headless commits). Pass `--repo` to narrow to the current repo's sessions. |
-| `drift-check`         | Detect untracked dotfiles, Brewfile drift, and Mac ↔ Linux config divergence. Runs daily via Dagu. Exits 1 on drift; `--notify` files a GitHub issue and exits 0. |
+| `drift-check`         | Detect untracked dotfiles, Brewfile drift, and Mac ↔ Linux config divergence. Runs daily via Dagu. Exits 1 on drift, which triggers an autofix attempt via the dagu failure handler. |
 | `dev-up` / `dev-down` | Bring the remote dev droplet up/down and sync local SSH config. |
+
+## Dagu workflows
+
+Local [Dagu](https://dagu.cloud/) instance runs the schedules in [`dagu/`](dagu/). The Mac launchd job starts Dagu on login; the UI is at <http://localhost:8080>.
+
+| DAG                | Schedule      | Cadence  | What it does                                                                              |
+|--------------------|---------------|----------|-------------------------------------------------------------------------------------------|
+| `msgvault-sync`    | `0 9 * * *`   | Daily    | `msgvault sync` of the configured Gmail account                                             |
+| `drift-check`      | `0 10 * * *`  | Daily    | Runs [`scripts/drift-check`](scripts/drift-check) `--notify` to flag system-repo drift    |
+| `droplet-watchdog` | `0 */4 * * *` | 4-hourly | Emails + macOS-notifies if the `dev` DigitalOcean droplet has been up >24h                |
+| `workflow-digest`  | `0 6 * * *`   | Daily    | [`dagu-digest.sh`](scripts/dagu-digest.sh) — summarises 24h (or 7d for weekly DAGs) status of every DAG, mails it |
+| `jobs-digest`      | `0 18 * * 0`  | Weekly   | Vets last 7d of `label:jobs` mail via `claude -p` against target-role criteria; HTML email |
+| `tech-news-digest` | `0 18 * * 0`  | Weekly   | Generates two formats (A=tiered, B=HN-ranked) from `label:tech-news` mail, two emails     |
+
+### Email signals
+
+`NOTIFY_EMAIL` (set in `private/droplet-watchdog.conf`) receives:
+
+| Subject                                       | When                                       | Action expected                                                |
+|-----------------------------------------------|--------------------------------------------|----------------------------------------------------------------|
+| `[DAGU] Daily digest — all ok`                | 06:00 daily, system healthy                | None                                                           |
+| `[DAGU] Daily digest — N autofixed`           | 06:00 daily, autofix handled all failures  | None — info only                                               |
+| `[DAGU] Daily digest — N need human`          | 06:00 daily, escalated failures present    | Read individual `[DAGU AUTOFIX]` mails for diagnosis           |
+| `[DAGU] Daily digest — N unhandled failures`  | 06:00 daily, autofix didn't record outcome | Investigate manually                                           |
+| `[DAGU] Daily digest — N stale`               | 06:00 daily, expected runs missing         | Check scheduler                                                |
+| `[DAGU AUTOFIX] <dag> — needs human`          | At failure time, escalation only           | Provide credential / secret / external account access          |
+| `Dev droplet running for Xd Yh`               | Droplet up >24h                            | `dev-down` to snapshot and destroy                             |
+| `[Jobs digest] Week ending YYYY-MM-DD`        | Sunday 18:00                               | Read shortlist, action vetted candidates                       |
+| `[Tech-news digest A]` / `[Tech-news digest B]` | Sunday 18:00                             | Read for context                                               |
+
+### Autofix
+
+DAG failures are handled by [`scripts/dagu-autofix.sh`](scripts/dagu-autofix.sh), wired in via `handler_on.failure` in [`dotfiles/.config/dagu/base.yaml`](dotfiles/.config/dagu/base.yaml). On any failure the script:
+
+1. Reads `DAG_NAME`, `DAG_RUN_ID`, `DAG_RUN_LOG_FILE` from the dagu runtime env, tails the log.
+2. Invokes `claude -p --permission-mode bypassPermissions --model claude-opus-4-7` with a prompt that asks Claude to classify the failure and act:
+   - **transient** (network blip, rate limit, 5xx) → no action; next scheduled run passes.
+   - **fixable** (script bug, drift, config) → fix in the relevant repo, commit to `main`, push. No PR, no GitHub issue.
+   - **escalated** (needs credentials / secrets / external account access) → email a focused diagnosis to `NOTIFY_EMAIL`.
+3. Appends one JSON line to `~/.local/state/dagu-autofix.jsonl` recording the outcome.
+
+The daily digest joins dagu run history against this log so a failure that was autofixed shows as `[FIX]`, not `[FAIL]`. Only escalations and genuinely unhandled failures get flagged in the digest subject line.
+
+Session output is captured at `/tmp/dagu-autofix-<dag>.log` for debugging.
 
 ## Remote box
 

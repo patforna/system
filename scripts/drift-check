@@ -5,13 +5,16 @@ set -uo pipefail  # no -e: collect all drift items rather than stopping on first
 # tracked in the Brewfile, dotfiles, or README.
 #
 # Exit codes: 0 = clean, 1 = drift detected.
-# With --notify: file a GitHub issue on drift and exit 0 (the issue is the
-# signal, so don't also fail the run — used by Dagu).
+# --notify is accepted for backwards compatibility but currently has no extra
+# effect — drift always exits 1, and the dagu autofix handler picks it up
+# from there (see scripts/dagu-autofix.sh).
 
 export PATH="${HOME}/.local/bin:${PATH}"
 
-NOTIFY=0
-[[ "${1:-}" == "--notify" ]] && NOTIFY=1
+# --notify is accepted for backwards compatibility (used by dagu/drift-check.yaml)
+# but no longer changes behaviour — drift always exits 1, the dagu autofix
+# handler picks it up.
+[[ "${1:-}" == "--notify" ]] || true
 
 BREWFILE="${HOME}/github/system/Brewfile"
 DOTFILES="${HOME}/github/system/dotfiles"
@@ -537,27 +540,16 @@ fi
 echo ""
 echo "=============================="
 
-create_issue() {
-  local title="$1" body="$2"
-  if command -v gh &>/dev/null; then
-    gh issue create --repo patforna/system --title "$title" --body "$body" --label "drift" 2>/dev/null || true
-  fi
-}
-
 if [[ ${#DRIFT[@]} -eq 0 ]]; then
   echo "No drift detected."
   exit 0
 fi
 
 echo "${#DRIFT[@]} issue(s) found:"
-body=""
 for d in "${DRIFT[@]}"; do
   echo "  - $d"
-  body+="- $d"$'\n'
 done
 
-if [[ $NOTIFY -eq 1 ]]; then
-  create_issue "Drift Check: ${#DRIFT[@]} issue(s)" "$body"
-  exit 0  # side-channel notified; don't fail the dagu run
-fi
+# Drift is a real problem — exit non-zero so the dagu failure handler triggers
+# an autofix attempt. NOTIFY is no-op now (kept so existing dagu yaml works).
 exit 1
