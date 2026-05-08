@@ -92,7 +92,7 @@ Local [Dagu](https://dagu.cloud/) instance runs the schedules in [`dagu/`](dagu/
 |--------------------|----------------------------------|-----------------------------------------------------------------------------------------------|
 | `msgvault-sync`    | Daily at 09:00                   | `msgvault sync` of the configured Gmail account                                               |
 | `drift-check`      | Daily at 10:00                   | Runs [`scripts/drift-check`](scripts/drift-check) `--notify` to flag system-repo drift        |
-| `droplet-watchdog` | Every 4 hours (00:00, 04:00, …)  | Emails + macOS-notifies if the `dev` DigitalOcean droplet has been up >24h                    |
+| `droplet-watchdog` | Every 4 hours                    | Emails + macOS-notifies if the `dev` DigitalOcean droplet has been up >24h                    |
 | `workflow-digest`  | Daily at 06:00                   | [`dagu-digest.sh`](scripts/dagu-digest.sh) — summarises 24h (7d for weekly DAGs) status, mails it |
 | `jobs-digest`      | Sunday at 18:00                  | Vets last 7d of `label:jobs` mail via `claude -p` against target-role criteria; HTML email    |
 | `tech-news-digest` | Sunday at 18:00                  | Generates two formats (A=tiered, B=HN-ranked) from `label:tech-news` mail, two emails         |
