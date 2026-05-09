@@ -2,4 +2,4 @@ schedule: "0 9 * * *"
 
 steps:
   - name: msgvault-sync
-    command: $HOME/.local/bin/msgvault sync the configured Gmail account
+    command: $HOME/.local/bin/msgvault sync
