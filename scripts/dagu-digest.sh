@@ -4,10 +4,11 @@ set -uo pipefail
 # Daily digest of dagu DAG runs. Sent via gws gmail to NOTIFY_EMAIL.
 # Designed to run via Dagu once a day (see dagu/workflow-digest.yaml).
 #
-# For each DAG in ~/github/system/dagu/, summarises runs in the last 24h
-# (count, ok, failed) and joins against the autofix log so failures that were
-# auto-fixed don't look like open problems. The subject line only counts
-# failures that need human attention.
+# Two states per row: OK / ATTN. Anything that needs human attention
+# (escalation, unhandled failure, scheduler didn't fire) is ATTN; everything
+# else is OK. The row's free-text comment carries the detail — for failed
+# runs it's the latest autofix `note` field, written by the per-failure
+# Claude session.
 
 CONF="${HOME}/github/system/private/droplet-watchdog.conf"
 [[ -f "$CONF" ]] && source "$CONF"
@@ -22,29 +23,21 @@ TODAY=$(date '+%Y-%m-%d')
 DAGU=/opt/homebrew/bin/dagu
 AUTOFIX_LOG="${HOME}/.local/state/dagu-autofix.jsonl"
 
-# Cut-off for autofix entries we care about: anything with ts >= now - 7d
-# (a generous window — the per-DAG window below filters again).
 AUTOFIX_SINCE_24H=$(date -u -v-24H +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '-24 hours' +%Y-%m-%dT%H:%M:%SZ)
 AUTOFIX_SINCE_7D=$(date -u -v-7d +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '-7 days' +%Y-%m-%dT%H:%M:%SZ)
 
-# Count autofix outcomes for one DAG within a window.
-# Args: dag_name, since_ts, outcome
-count_autofix() {
-  local dag="$1" since="$2" outcome="$3"
-  [[ -f "$AUTOFIX_LOG" ]] || { echo 0; return; }
-  if command -v jq >/dev/null 2>&1; then
-    jq -r --arg dag "$dag" --arg since "$since" --arg outcome "$outcome" \
-      'select(.dag == $dag and .ts >= $since and .outcome == $outcome) | .outcome' \
-      "$AUTOFIX_LOG" 2>/dev/null | wc -l | tr -d ' '
-  else
-    grep -c "\"dag\":\"$dag\".*\"outcome\":\"$outcome\"" "$AUTOFIX_LOG" 2>/dev/null || echo 0
-  fi
+# Latest autofix entry for one DAG within a window. Prints "<outcome>\t<note>"
+# or empty if none. Requires jq.
+latest_autofix() {
+  local dag="$1" since="$2"
+  [[ -f "$AUTOFIX_LOG" ]] || return
+  jq -r --arg dag "$dag" --arg since "$since" \
+    'select(.dag == $dag and .ts >= $since) | "\(.outcome)\t\(.note)"' \
+    "$AUTOFIX_LOG" 2>/dev/null | tail -1
 }
 
-total_failed_unhandled=0
-total_escalated=0
-total_fixed=0
-total_stale=0
+attn_count=0
+note_count=0
 rows=""
 
 for f in "$DAGS_DIR"/*.yaml; do
@@ -69,58 +62,55 @@ for f in "$DAGS_DIR"/*.yaml; do
     END { printf "%d %d %d\n", total+0, ok+0, failed+0 }
   ')
 
-  fixed=$(count_autofix "$dag" "$autofix_since" "fixed")
-  escalated=$(count_autofix "$dag" "$autofix_since" "escalated")
-  transient=$(count_autofix "$dag" "$autofix_since" "transient")
-  unhandled=$(count_autofix "$dag" "$autofix_since" "unhandled")
+  af=$(latest_autofix "$dag" "$autofix_since")
+  af_outcome=""
+  af_note=""
+  if [[ -n "$af" ]]; then
+    af_outcome="${af%%$'\t'*}"
+    af_note="${af#*$'\t'}"
+  fi
 
-  last_line=$("$DAGU" status "$dag" 2>/dev/null | head -1)
+  marker="OK  "
+  comment=""
 
-  marker="OK   "
-  autofix_note=""
-  if (( escalated > 0 )); then
-    marker="ESC  "
-    total_escalated=$((total_escalated + escalated))
-    autofix_note=$(printf "  autofix: %d escalated" "$escalated")
-  elif (( failed > 0 )); then
-    handled=$((fixed + transient + unhandled))
-    if (( unhandled > 0 || handled < failed )); then
-      marker="FAIL "
-      total_failed_unhandled=$((total_failed_unhandled + (failed - fixed - transient)))
-    elif (( fixed > 0 )); then
-      marker="FIX  "
-      total_fixed=$((total_fixed + fixed))
+  if (( failed > 0 )); then
+    if [[ -n "$af_outcome" ]]; then
+      comment="$af_note"
+      if [[ "$af_outcome" == "escalated" || "$af_outcome" == "unhandled" ]]; then
+        marker="ATTN"
+        attn_count=$((attn_count + 1))
+      else
+        note_count=$((note_count + 1))
+      fi
     else
-      marker="TRAN "
+      marker="ATTN"
+      comment="failure with no autofix record — autofix may not be wired or crashed"
+      attn_count=$((attn_count + 1))
     fi
-    parts=""
-    (( fixed > 0 )) && parts+="${fixed} fixed, "
-    (( transient > 0 )) && parts+="${transient} transient, "
-    (( unhandled > 0 )) && parts+="${unhandled} unhandled, "
-    parts="${parts%, }"
-    [[ -n "$parts" ]] && autofix_note=$(printf "  autofix: %s" "$parts")
   elif (( runs == 0 )) && [[ "$dag" != "$SELF" ]]; then
+    last_line=$("$DAGU" status "$dag" 2>/dev/null | head -1)
     if [[ -z "$last_line" ]]; then
-      marker="PEND "
+      comment="never run yet"
+      note_count=$((note_count + 1))
     else
-      marker="STALE"
-      total_stale=$((total_stale + 1))
+      marker="ATTN"
+      comment="no runs in ${window} — scheduler may not have fired"
+      attn_count=$((attn_count + 1))
     fi
   fi
 
-  rows+=$(printf '[%s] %-20s %-3s: %d runs, %d ok, %d fail   latest: %s%s\n' \
-    "$marker" "$dag" "$window" "$runs" "$ok" "$failed" "$last_line" "$autofix_note")
+  if [[ -n "$comment" ]]; then
+    rows+=$(printf '%s  %-20s  %d/%d in %-3s  — %s\n' "$marker" "$dag" "$ok" "$runs" "$window" "$comment")
+  else
+    rows+=$(printf '%s  %-20s  %d/%d in %s\n' "$marker" "$dag" "$ok" "$runs" "$window")
+  fi
   rows+=$'\n'
 done
 
-if (( total_escalated > 0 )); then
-  subject="[DAGU] Daily digest — ${total_escalated} need human"
-elif (( total_failed_unhandled > 0 )); then
-  subject="[DAGU] Daily digest — ${total_failed_unhandled} unhandled failures"
-elif (( total_stale > 0 )); then
-  subject="[DAGU] Daily digest — ${total_stale} stale"
-elif (( total_fixed > 0 )); then
-  subject="[DAGU] Daily digest — all ok (${total_fixed} autofixed)"
+if (( attn_count > 0 )); then
+  subject="[DAGU] Daily digest — ${attn_count} need attention"
+elif (( note_count > 0 )); then
+  subject="[DAGU] Daily digest — all ok (${note_count} notes)"
 else
   subject="[DAGU] Daily digest — all ok"
 fi
@@ -128,7 +118,7 @@ fi
 body="Dagu daily digest — ${TODAY}
 
 ${rows}
-Markers: OK / FIX (autofixed) / TRAN (transient, no action) / ESC (needs human) / FAIL (unhandled) / STALE / PEND
+Markers: OK / ATTN. Comments come from the per-failure autofix session.
 
 UI: http://localhost:8080"
 

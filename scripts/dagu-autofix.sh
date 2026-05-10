@@ -73,9 +73,14 @@ Before you finish, append exactly one JSON line to $STATE_FILE. Use bash with si
 
   echo JSON >> $STATE_FILE
 
-Where JSON is a one-line object with fields: ts ($TS), dag ($DAG_NAME), run_id ($DAG_RUN_ID), outcome (one of transient/fixed/escalated), note (one short line), commit (sha if you committed, empty otherwise).
+Where JSON is a one-line object with fields: ts ($TS), dag ($DAG_NAME), run_id ($DAG_RUN_ID), outcome (one of transient/fixed/escalated), note, commit (sha if you committed, empty otherwise).
 
-The next daily digest reads this file to surface autofix outcomes. If you skip this, the digest will treat the failure as unhandled.
+The note field is shown verbatim in Patric's daily digest as the only context for what happened. Format it as one short sentence (≤120 chars) of the form "<verb>: <what>" so it reads well alongside other rows. Examples:
+  - "fixed: removed stray prose from DAG command (parsed as 4 positional args)"
+  - "transient: 503 from sheets API, next run should pass"
+  - "escalated: gmail OAuth token expired, needs re-auth via gws auth"
+
+The next daily digest reads this file to surface autofix outcomes. If you skip this, the digest will treat the failure as unhandled and bug Patric to investigate.
 
 # Notes
 - You have file system access, gws gmail, msgvault, gh, dagu CLI, and your usual skills.
