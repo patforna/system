@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-# Weekly tech-news digest. Sends Format A (tiered) and Format B (HN-ranked) emails
-# to NOTIFY_EMAIL by feeding 7 days of label:tech-news mail through claude -p.
+# Weekly tech-news digest. Sends an HN-style ranked email to NOTIFY_EMAIL by
+# feeding 7 days of label:tech-news mail through claude -p.
 # Designed to run via dagu (see dagu/tech-news-digest.yaml).
+#
+# claude -p renders the HTML to /tmp/tech-news.html; this script then sends.
+# Keeping the +send out of the model loop avoids alias / PATH surprises in the
+# Bash tool's shell (e.g. zsh `alias cat='bat'` silently emptying --body).
 
 CONF="${HOME}/github/system/private/droplet-watchdog.conf"
 [[ -f "$CONF" ]] && source "$CONF"
@@ -13,10 +17,13 @@ NOTIFY_EMAIL="${NOTIFY_EMAIL:-}"
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 DATA_FILE="/tmp/tech-news-data.json"
+PROMPT_FILE="$SCRIPT_DIR/tech-news/prompt.md"
+HTML_FILE="/tmp/tech-news.html"
 DATE=$(date '+%Y-%m-%d')
 
 CLAUDE=/Users/patric/.local/bin/claude
 PYTHON3=/usr/bin/python3
+GWS=/opt/homebrew/bin/gws
 
 # 1. Fetch 7 days of tech-news mail
 "$PYTHON3" "$SCRIPT_DIR/tech-news/fetch-data.py" \
@@ -24,24 +31,28 @@ PYTHON3=/usr/bin/python3
   echo "fetch failed" >&2; exit 1;
 }
 
-# 2. Generate and send each format
-fail=0
-for fmt in A B; do
-  PROMPT_FILE="$SCRIPT_DIR/tech-news/prompt-${fmt}.md"
-  [[ -f "$PROMPT_FILE" ]] || { echo "missing $PROMPT_FILE" >&2; fail=1; continue; }
+# 2. Render
+[[ -f "$PROMPT_FILE" ]] || { echo "missing $PROMPT_FILE" >&2; exit 1; }
+rm -f "$HTML_FILE"
 
-  prompt=$(sed -e "s|{DATA_FILE}|$DATA_FILE|g" \
-               -e "s|{NOTIFY_EMAIL}|$NOTIFY_EMAIL|g" \
-               -e "s|{DATE}|$DATE|g" "$PROMPT_FILE")
+prompt=$(sed -e "s|{DATA_FILE}|$DATA_FILE|g" \
+             -e "s|{DATE}|$DATE|g" "$PROMPT_FILE")
 
-  echo "=== Running format $fmt ==="
-  if ! "$CLAUDE" -p \
-      --permission-mode bypassPermissions \
-      --model claude-opus-4-7 \
-      "$prompt" 2>&1 | tee "/tmp/tech-news-${fmt}.log"; then
-    echo "format $fmt failed" >&2
-    fail=1
-  fi
-done
+echo "=== Rendering ==="
+"$CLAUDE" -p \
+    --permission-mode bypassPermissions \
+    --model claude-opus-4-7 \
+    "$prompt" 2>&1 | tee /tmp/tech-news.log
 
-exit "$fail"
+if [[ ! -s "$HTML_FILE" ]]; then
+  echo "$HTML_FILE missing or empty — skipping send" >&2
+  exit 1
+fi
+
+# 3. Send
+echo "=== Sending ==="
+"$GWS" gmail +send \
+    --to "$NOTIFY_EMAIL" \
+    --subject "[Tech-news digest] Week ending $DATE" \
+    --body "$(cat "$HTML_FILE")" \
+    --html

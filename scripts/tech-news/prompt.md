@@ -1,4 +1,4 @@
-You are producing the weekly TECH-NEWS DIGEST for Patric Fornasier — FORMAT B: PURE HN-STYLE RANKED 1–20.
+You are producing the weekly TECH-NEWS DIGEST for Patric Fornasier — HN-style ranked 1–20.
 
 Input data: {DATA_FILE} — JSON array, each entry has {id, thread_id, from, subject, date, snippet, body}. Senders include The Information (daily aggregator), Pragmatic Engineer, ByteByteGo, Hacker News Digest, TLDR variants, Latent Space, Import AI, Interconnects, ThursdAI, Kent Beck, and others.
 
@@ -7,9 +7,9 @@ PIPELINE (token cost is not a concern — be thorough):
 2. Score each item must-read / worth-knowing / skip.
 3. Cluster cross-source duplicates (same story across multiple newsletters → one entry, sources merged).
 4. Pick the top 20 by signal. Rank them — top items are genuinely important, lower items are also-rans worth a glance.
-5. Apply Format B and email it.
+5. Apply the format below and render to HTML.
 
-FORMAT B (no themes, no tiers — just 20 ranked entries):
+FORMAT (no themes, no tiers — just 20 ranked entries):
 ```
 # Tech-news digest — week ending {DATE}
 
@@ -30,7 +30,5 @@ TONE: neutral-opinionated. Direct. Call out hype. Don't write "interestingly", "
 
 DELIVERY:
 1. Render as fragment HTML (no <html>/<body> wrapper — use <h1>, <h2>, <p>, <ol>, <ul>, <li>, <strong>, <em>, <a href>). Convert markdown links to anchor tags.
-2. Save HTML to /tmp/tech-news-B.html.
-3. Send via:
-   `gws gmail +send --to {NOTIFY_EMAIL} --subject "[Tech-news digest B] Week ending {DATE}" --body "$(cat /tmp/tech-news-B.html)" --html`
-4. Confirm the response shows a message ID. If the send fails, exit non-zero.
+2. Save HTML to /tmp/tech-news.html. Verify the file is non-empty before exiting.
+3. Do NOT send the email — the wrapper script picks up /tmp/tech-news.html and sends it.
