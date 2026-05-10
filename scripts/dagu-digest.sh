@@ -6,9 +6,9 @@ set -uo pipefail
 #
 # Two states per row: OK / ATTN. Anything that needs human attention
 # (escalation, unhandled failure, scheduler didn't fire) is ATTN; everything
-# else is OK. The row's free-text comment carries the detail — for failed
-# runs it's the latest autofix `note` field, written by the per-failure
-# Claude session.
+# else is OK. The row's free-text comment carries the headline; a Details
+# section underneath expands each notable row with the autofix outcome,
+# commit subject, and a GitHub URL when the fix produced a commit.
 
 CONF="${HOME}/github/system/private/droplet-watchdog.conf"
 [[ -f "$CONF" ]] && source "$CONF"
@@ -17,28 +17,48 @@ NOTIFY_EMAIL="${NOTIFY_EMAIL:-}"
 [[ -z "$NOTIFY_EMAIL" ]] && exit 0
 
 DAGS_DIR="${HOME}/github/system/dagu"
+SYSTEM_REPO="${HOME}/github/system"
 SELF="workflow-digest"
 TODAY=$(date '+%Y-%m-%d')
 
-DAGU=/opt/homebrew/bin/dagu
-AUTOFIX_LOG="${HOME}/.local/state/dagu-autofix.jsonl"
+DAGU="${DAGU:-/opt/homebrew/bin/dagu}"
+AUTOFIX_LOG="${AUTOFIX_LOG:-${HOME}/.local/state/dagu-autofix.jsonl}"
 
 AUTOFIX_SINCE_24H=$(date -u -v-24H +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '-24 hours' +%Y-%m-%dT%H:%M:%SZ)
 AUTOFIX_SINCE_7D=$(date -u -v-7d +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '-7 days' +%Y-%m-%dT%H:%M:%SZ)
 
-# Latest autofix entry for one DAG within a window. Prints "<outcome>\t<note>"
-# or empty if none. Requires jq.
+# Derive https://github.com/<owner>/<repo> from the system repo's origin.
+github_repo_url() {
+  local url
+  url=$(git -C "$SYSTEM_REPO" remote get-url origin 2>/dev/null) || return
+  case "$url" in
+    git@github.com:*) echo "https://github.com/${url#git@github.com:}" | sed 's/\.git$//' ;;
+    https://github.com/*) echo "${url%.git}" ;;
+  esac
+}
+GITHUB_REPO_URL=$(github_repo_url)
+
+# Latest autofix entry for one DAG within a window. Prints
+# "<outcome>\t<note>\t<commit>" or empty if none. Requires jq.
 latest_autofix() {
   local dag="$1" since="$2"
   [[ -f "$AUTOFIX_LOG" ]] || return
   jq -r --arg dag "$dag" --arg since "$since" \
-    'select(.dag == $dag and .ts >= $since) | "\(.outcome)\t\(.note)"' \
+    'select(.dag == $dag and .ts >= $since) | "\(.outcome)\t\(.note)\t\(.commit // "")"' \
     "$AUTOFIX_LOG" 2>/dev/null | tail -1
+}
+
+# git show -s '%s' for a sha, or empty if the sha doesn't resolve.
+commit_subject() {
+  local sha="$1"
+  [[ -z "$sha" ]] && return
+  git -C "$SYSTEM_REPO" show -s --format='%s' "$sha" 2>/dev/null || true
 }
 
 attn_count=0
 note_count=0
 rows=""
+details=""
 
 for f in "$DAGS_DIR"/*.yaml; do
   dag=$(basename "$f" .yaml)
@@ -65,37 +85,61 @@ for f in "$DAGS_DIR"/*.yaml; do
   af=$(latest_autofix "$dag" "$autofix_since")
   af_outcome=""
   af_note=""
+  af_commit=""
   if [[ -n "$af" ]]; then
-    af_outcome="${af%%$'\t'*}"
-    af_note="${af#*$'\t'}"
+    IFS=$'\t' read -r af_outcome af_note af_commit <<< "$af"
   fi
 
   marker="OK  "
   comment=""
+  detail_block=""
 
   if (( failed > 0 )); then
     if [[ -n "$af_outcome" ]]; then
-      comment="$af_note"
+      comment="${af_outcome}: ${af_note}"
       if [[ "$af_outcome" == "escalated" || "$af_outcome" == "unhandled" ]]; then
         marker="ATTN"
         attn_count=$((attn_count + 1))
       else
         note_count=$((note_count + 1))
       fi
+
+      detail_block="  ${dag} (${af_outcome})"$'\n'
+      detail_block+="    ${af_note}"$'\n'
+      if [[ -n "$af_commit" ]]; then
+        subject_line=$(commit_subject "$af_commit")
+        short_sha="${af_commit:0:7}"
+        if [[ -n "$subject_line" ]]; then
+          detail_block+="    commit ${short_sha}: ${subject_line}"$'\n'
+        else
+          detail_block+="    commit ${short_sha}"$'\n'
+        fi
+        if [[ -n "$GITHUB_REPO_URL" ]]; then
+          detail_block+="    ${GITHUB_REPO_URL}/commit/${af_commit}"$'\n'
+        fi
+      fi
     else
       marker="ATTN"
       comment="failure with no autofix record — autofix may not be wired or crashed"
       attn_count=$((attn_count + 1))
+      detail_block="  ${dag} (no autofix record)"$'\n'
+      detail_block+="    ${failed} failed run(s) in ${window} but no entry in dagu-autofix.jsonl."$'\n'
+      detail_block+="    Check handler_on.failure on the DAG and tail /tmp/dagu-autofix-${dag}.log."$'\n'
     fi
   elif (( runs == 0 )) && [[ "$dag" != "$SELF" ]]; then
     last_line=$("$DAGU" status "$dag" 2>/dev/null | head -1)
     if [[ -z "$last_line" ]]; then
       comment="never run yet"
       note_count=$((note_count + 1))
+      detail_block="  ${dag} (pending)"$'\n'
+      detail_block+="    No history yet — first scheduled run still ahead."$'\n'
     else
       marker="ATTN"
       comment="no runs in ${window} — scheduler may not have fired"
       attn_count=$((attn_count + 1))
+      detail_block="  ${dag} (stale)"$'\n'
+      detail_block+="    No runs in ${window}. ${last_line}"$'\n'
+      detail_block+="    Check the dagu scheduler is running and the cron expression is valid."$'\n'
     fi
   fi
 
@@ -105,6 +149,10 @@ for f in "$DAGS_DIR"/*.yaml; do
     rows+=$(printf '%s  %-20s  %d/%d in %s\n' "$marker" "$dag" "$ok" "$runs" "$window")
   fi
   rows+=$'\n'
+
+  if [[ -n "$detail_block" ]]; then
+    details+="$detail_block"$'\n'
+  fi
 done
 
 if (( attn_count > 0 )); then
@@ -117,8 +165,15 @@ fi
 
 body="Dagu daily digest — ${TODAY}
 
-${rows}
-Markers: OK / ATTN. Comments come from the per-failure autofix session.
+${rows}"
+
+if [[ -n "$details" ]]; then
+  body+="Details:
+
+${details}"
+fi
+
+body+="Markers: OK / ATTN. Comments and details come from the per-failure autofix session.
 
 UI: http://localhost:8080"
 
