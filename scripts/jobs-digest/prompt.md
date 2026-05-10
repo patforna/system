@@ -79,8 +79,6 @@ TONE: direct, terse, opinionated. British spelling. No em-dashes — single dash
 DELIVERY:
 
 1. Render as fragment HTML (no `<html>`/`<body>` wrapper).
-2. Save HTML to /tmp/jobs-digest.html.
-3. Send via:
-   `gws gmail +send --to {NOTIFY_EMAIL} --subject "[Jobs digest] Week ending {DATE} — N vetted, M borderline, K rejected" --body "$(cat /tmp/jobs-digest.html)" --html`
-   (substitute N/M/K with actual counts in the subject)
-4. Confirm the response shows a message ID. If the send fails, exit non-zero.
+2. Save HTML to /tmp/jobs-digest.html. Verify the file is non-empty before exiting.
+3. Write the email subject line to /tmp/jobs-digest.subject, format: `[Jobs digest] Week ending {DATE} — N vetted, M borderline, K rejected` (substitute N/M/K with actual counts). One line, no trailing newline if possible.
+4. Do NOT send the email — the wrapper script picks up /tmp/jobs-digest.html and /tmp/jobs-digest.subject and sends it.

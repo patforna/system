@@ -5,6 +5,11 @@ set -uo pipefail
 # target-role criteria, validates top candidates via WebFetch, sends an HTML
 # email to NOTIFY_EMAIL with vetted / borderline / rejected buckets.
 # Designed to run via dagu (see dagu/jobs-digest.yaml).
+#
+# claude -p renders the HTML and subject to /tmp/jobs-digest.{html,subject};
+# this script then sends. Keeping the +send out of the model loop avoids alias /
+# PATH surprises in the Bash tool's shell (e.g. zsh `alias cat='bat'` silently
+# emptying --body).
 
 CONF="${HOME}/github/system/private/droplet-watchdog.conf"
 [[ -f "$CONF" ]] && source "$CONF"
@@ -14,10 +19,13 @@ NOTIFY_EMAIL="${NOTIFY_EMAIL:-}"
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 DATA_FILE="/tmp/jobs-digest-data.json"
+HTML_FILE="/tmp/jobs-digest.html"
+SUBJECT_FILE="/tmp/jobs-digest.subject"
 DATE=$(date '+%Y-%m-%d')
 
 CLAUDE=/Users/patric/.local/bin/claude
 PYTHON3=/usr/bin/python3
+GWS=/opt/homebrew/bin/gws
 
 # 1. Fetch 7 days of jobs-labelled mail
 "$PYTHON3" "$SCRIPT_DIR/jobs-digest/fetch-data.py" \
@@ -25,16 +33,35 @@ PYTHON3=/usr/bin/python3
   echo "fetch failed" >&2; exit 1;
 }
 
-# 2. Vet, validate, compose, send
+# 2. Vet, validate, compose
 PROMPT_FILE="$SCRIPT_DIR/jobs-digest/prompt.md"
 [[ -f "$PROMPT_FILE" ]] || { echo "missing $PROMPT_FILE" >&2; exit 1; }
 
+rm -f "$HTML_FILE" "$SUBJECT_FILE"
+
 prompt=$(sed -e "s|{DATA_FILE}|$DATA_FILE|g" \
-             -e "s|{NOTIFY_EMAIL}|$NOTIFY_EMAIL|g" \
              -e "s|{DATE}|$DATE|g" "$PROMPT_FILE")
 
-echo "=== Running jobs digest ==="
+echo "=== Rendering jobs digest ==="
 "$CLAUDE" -p \
     --permission-mode bypassPermissions \
     --model claude-opus-4-7 \
     "$prompt" 2>&1 | tee /tmp/jobs-digest.log
+
+if [[ ! -s "$HTML_FILE" ]]; then
+  echo "jobs digest: $HTML_FILE missing or empty — not sending" >&2
+  exit 1
+fi
+
+if [[ -s "$SUBJECT_FILE" ]]; then
+  SUBJECT=$(tr -d '\n' < "$SUBJECT_FILE")
+else
+  SUBJECT="[Jobs digest] Week ending $DATE"
+fi
+
+echo "=== Sending jobs digest ==="
+"$GWS" gmail +send \
+    --to "$NOTIFY_EMAIL" \
+    --subject "$SUBJECT" \
+    --body "$(cat "$HTML_FILE")" \
+    --html
