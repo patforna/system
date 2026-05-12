@@ -52,7 +52,7 @@ echo "--- apt packages ---"
 sudo apt-get update -qq
 sudo apt-get install -y -qq \
   zsh tmux neovim git ripgrep bat fd-find btop jq curl unzip build-essential \
-  zsh-autosuggestions zsh-syntax-highlighting shellcheck
+  zsh-autosuggestions zsh-syntax-highlighting shellcheck figlet
 
 # Ubuntu ships bat as "batcat" and fd as "fdfind" — create symlinks
 sudo ln -sf /usr/bin/batcat /usr/local/bin/bat 2>/dev/null || true
