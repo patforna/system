@@ -34,6 +34,12 @@ if ! command -v msgvault &>/dev/null; then
 else
   echo "--- msgvault: already installed ---"
 fi
+# We use our own OAuth client (lucid-box-490714-e8, In Production) instead of
+# msgvault's upstream Testing-mode client — avoids 7-day refresh-token expiry.
+# client_secret.json is symlinked by dot_files.sh; the token is machine-local.
+if [[ -e "${HOME}/.msgvault/client_secret.json" && ! -f "${HOME}/.msgvault/tokens/patric.fornasier@gmail.com.json" ]]; then
+  echo "  NOTE  No msgvault token. Run: msgvault add-account patric.fornasier@gmail.com --force"
+fi
 echo ""
 
 # --- git-crypt ---

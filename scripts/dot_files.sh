@@ -75,6 +75,11 @@ link "${PRIVATE}/gws/.encryption_key"             "${HOME}/.config/gws/.encrypti
 link "${PRIVATE}/gws/credentials.enc"             "${HOME}/.config/gws/credentials.enc"
 echo ""
 
+# --- App credentials (non-XDG) ---
+echo "--- App credentials ---"
+link "${PRIVATE}/msgvault/client_secret.json"     "${HOME}/.msgvault/client_secret.json"
+echo ""
+
 # --- Claude Code ---
 echo "--- Claude Code ---"
 ensure_local_dir "${HOME}/.claude/projects"
