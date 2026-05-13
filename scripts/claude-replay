@@ -53,11 +53,30 @@ def project_session_dir(project_root: Path) -> Path:
     return PROJECTS_DIR / encode_project_path(project_root)
 
 
+def project_session_dirs(project_root: Path) -> list[Path]:
+    """All Claude project dirs that belong to this project root.
+
+    Includes the canonical encoded dir plus any sibling worktree dirs whose
+    encoded slug starts with the canonical slug + "-" (Claude encodes worktree
+    paths like `/Users/.../tad/.claude-worktrees/task-NNN` under their own
+    project dirs alongside the main one).
+    """
+    base = encode_project_path(project_root)
+    dirs: list[Path] = []
+    main = PROJECTS_DIR / base
+    if main.is_dir():
+        dirs.append(main)
+    if PROJECTS_DIR.is_dir():
+        for d in PROJECTS_DIR.iterdir():
+            if d.is_dir() and d.name.startswith(base + "-") and d != main:
+                dirs.append(d)
+    return dirs
+
+
 def list_sessions(project_root: Path) -> list[Path]:
-    d = project_session_dir(project_root)
-    if not d.is_dir():
-        return []
-    files = [p for p in d.iterdir() if p.is_file() and p.suffix == ".jsonl"]
+    files: list[Path] = []
+    for d in project_session_dirs(project_root):
+        files.extend(p for p in d.iterdir() if p.is_file() and p.suffix == ".jsonl")
     files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
     return files
 
@@ -68,8 +87,16 @@ def latest_session(project_root: Path) -> Path | None:
 
 
 def session_by_uuid(project_root: Path, uuid: str) -> Path | None:
-    cand = project_session_dir(project_root) / f"{uuid}.jsonl"
-    return cand if cand.is_file() else None
+    for d in project_session_dirs(project_root):
+        cand = d / f"{uuid}.jsonl"
+        if cand.is_file():
+            return cand
+    # Subagent sessions live under <session>/subagents/<agent-id>.jsonl
+    for d in project_session_dirs(project_root):
+        for cand in d.rglob(f"{uuid}.jsonl"):
+            if cand.is_file():
+                return cand
+    return None
 
 
 def session_via_commit(commit: str) -> Path | None:
@@ -370,14 +397,17 @@ def render_markdown(session_path: Path, records: list[dict], include_all: bool) 
 def cmd_list(project_root: Path) -> int:
     sessions = list_sessions(project_root)
     if not sessions:
-        print(f"no sessions in {project_session_dir(project_root)}")
+        print(f"no sessions for {project_root} in {PROJECTS_DIR}")
         return 0
     for s in sessions:
         records = load_records(s)
         meta = session_metadata(records)
         ts = meta.get("started") or "?"
         title = meta.get("title") or "(no title)"
-        print(f"{s.stem}  {ts}  {title}")
+        # Mark worktree sessions so users can tell them apart.
+        canonical = PROJECTS_DIR / encode_project_path(project_root)
+        marker = "" if s.parent == canonical or s.parent.name == "subagents" and s.parent.parent.parent == canonical else "  [worktree]"
+        print(f"{s.stem}  {ts}  {title}{marker}")
     return 0
 
 
@@ -408,7 +438,7 @@ def main() -> int:
         session_path = session_by_uuid(project_root, args.session)
         if session_path is None:
             print(
-                f"error: no session {args.session} in {project_session_dir(project_root)}",
+                f"error: no session {args.session} for {project_root}",
                 file=sys.stderr,
             )
             return 1
@@ -416,7 +446,7 @@ def main() -> int:
         session_path = latest_session(project_root)
         if session_path is None:
             print(
-                f"error: no sessions in {project_session_dir(project_root)}",
+                f"error: no sessions for {project_root} in {PROJECTS_DIR}",
                 file=sys.stderr,
             )
             return 1
