@@ -535,6 +535,20 @@ if [[ ${#DRIFT[@]} -eq $ssh_drift_count ]]; then
   ok "SSH config has valid droplet IP"
 fi
 
+# --- Shell scripts (syntax) ---
+section "Shell scripts (syntax)"
+syntax_drift_count=${#DRIFT[@]}
+while IFS= read -r f; do
+  if [[ "$f" == *.sh ]] || head -c 64 "$f" 2>/dev/null | grep -qE '^#!.*\b(bash|sh)\b'; then
+    if ! err=$(bash -n "$f" 2>&1); then
+      drift "shell parse error in ${f#${HOME}/github/system/}: $(echo "$err" | head -1)"
+    fi
+  fi
+done < <(find "${HOME}/github/system/scripts" -maxdepth 2 -type f 2>/dev/null)
+if [[ ${#DRIFT[@]} -eq $syntax_drift_count ]]; then
+  ok "all scripts parse cleanly"
+fi
+
 # --- Summary ---
 echo ""
 echo "=============================="

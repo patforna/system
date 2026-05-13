@@ -23,6 +23,7 @@ TODAY=$(date '+%Y-%m-%d')
 
 DAGU="${DAGU:-/opt/homebrew/bin/dagu}"
 AUTOFIX_LOG="${AUTOFIX_LOG:-${HOME}/.local/state/dagu-autofix.jsonl}"
+DAGU_LOG_DIR="${DAGU_LOG_DIR:-${HOME}/Library/Application Support/dagu/logs}"
 
 AUTOFIX_SINCE_24H=$(date -u -v-24H +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '-24 hours' +%Y-%m-%dT%H:%M:%SZ)
 AUTOFIX_SINCE_7D=$(date -u -v-7d +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '-7 days' +%Y-%m-%dT%H:%M:%SZ)
@@ -53,6 +54,51 @@ commit_subject() {
   local sha="$1"
   [[ -z "$sha" ]] && return
   git -C "$SYSTEM_REPO" show -s --format='%s' "$sha" 2>/dev/null || true
+}
+
+# Path of the most recent dag-run dir for a DAG (or empty).
+latest_dagrun_dir() {
+  local dag="$1"
+  local d="${DAGU_LOG_DIR}/${dag}"
+  [[ -d "$d" ]] || return
+  ls -td "$d"/dag-run_* 2>/dev/null | head -1
+}
+
+# Show the most useful slice of the failing step's output. Errors usually
+# appear at the top of stderr (followed by usage banners), while the actionable
+# line in stdout typically comes near the end. So head stderr, tail stdout.
+step_output_tail() {
+  local rundir="$1" dag="$2" max="${3:-10}"
+  [[ -d "$rundir" ]] || return
+  local step_dir
+  step_dir=$(ls -d "$rundir"/run_*/ 2>/dev/null | head -1)
+  [[ -z "$step_dir" ]] && return
+  local err_file out_file
+  err_file=$(ls "$step_dir"/${dag}.*.err 2>/dev/null | head -1)
+  out_file=$(ls "$step_dir"/${dag}.*.out 2>/dev/null | head -1)
+  local printed=0
+  if [[ -s "$err_file" ]]; then
+    echo "stderr (first ${max} lines):"
+    head -"$max" "$err_file"
+    printed=1
+  fi
+  if [[ -s "$out_file" ]]; then
+    [[ "$printed" == 1 ]] && echo ""
+    echo "stdout (last ${max} lines):"
+    tail -"$max" "$out_file"
+  fi
+}
+
+# If the autofix handler itself errored, print the first stderr line.
+handler_crash_line() {
+  local rundir="$1"
+  [[ -d "$rundir" ]] || return
+  local step_dir
+  step_dir=$(ls -d "$rundir"/run_*/ 2>/dev/null | head -1)
+  [[ -z "$step_dir" ]] && return
+  local of_err
+  of_err=$(ls "$step_dir"/onFailure.*.err 2>/dev/null | head -1)
+  [[ -s "$of_err" ]] && head -1 "$of_err"
 }
 
 attn_count=0
@@ -120,11 +166,29 @@ for f in "$DAGS_DIR"/*.yaml; do
       fi
     else
       marker="ATTN"
-      comment="failure with no autofix record — autofix may not be wired or crashed"
       attn_count=$((attn_count + 1))
-      detail_block="  ${dag} (no autofix record)"$'\n'
-      detail_block+="    ${failed} failed run(s) in ${window} but no entry in dagu-autofix.jsonl."$'\n'
-      detail_block+="    Check handler_on.failure on the DAG and tail /tmp/dagu-autofix-${dag}.log."$'\n'
+
+      rundir=$(latest_dagrun_dir "$dag")
+      crash_line=$(handler_crash_line "$rundir")
+      out_tail=$(step_output_tail "$rundir" "$dag" 10)
+
+      if [[ -n "$crash_line" ]]; then
+        comment="failure; autofix handler crashed"
+        detail_block="  ${dag} (autofix handler crashed)"$'\n'
+        detail_block+="    handler error: ${crash_line}"$'\n'
+      else
+        comment="failure with no autofix record"
+        detail_block="  ${dag} (no autofix record)"$'\n'
+        detail_block+="    ${failed} failed run(s) in ${window} but no entry in dagu-autofix.jsonl."$'\n'
+      fi
+
+      if [[ -n "$out_tail" ]]; then
+        while IFS= read -r line; do
+          detail_block+="      ${line}"$'\n'
+        done <<< "$out_tail"
+      else
+        detail_block+="    (no step output captured — check ${DAGU_LOG_DIR}/${dag}/)"$'\n'
+      fi
     fi
   elif (( runs == 0 )) && [[ "$dag" != "$SELF" ]]; then
     last_line=$("$DAGU" status "$dag" 2>/dev/null | head -1)

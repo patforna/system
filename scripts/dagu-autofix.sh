@@ -39,7 +39,10 @@ if [[ ! -x "$CLAUDE" ]]; then
   exit 0
 fi
 
-PROMPT=$(cat <<EOF
+# Use `read -d ''` rather than `PROMPT=$(cat <<EOF ... EOF)` because bash
+# tracks single quotes inside `$(...)` even when they sit inside an unquoted
+# heredoc — a lone apostrophe (e.g. "Patric's") would break the parse.
+IFS='' read -r -d '' PROMPT <<EOF || true
 You are the autofix handler for a failed dagu DAG run on Patric Mac. Today is $TODAY.
 
 # Context
@@ -89,7 +92,6 @@ The next daily digest reads this file to surface autofix outcomes. If you skip t
 - The only hard escalation rule is the credential one. Otherwise, use judgement.
 - If you cannot fit the work into your session for any reason, escalate rather than leaving the state file empty.
 EOF
-)
 
 LOG_OUT="/tmp/dagu-autofix-${DAG_NAME}.log"
 
