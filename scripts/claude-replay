@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
-"""claude-replay - Extract subagent transcripts from a Claude Code session JSONL log.
+"""claude-replay - Extract a Claude Code session transcript as readable markdown.
 
 After an /auto-task run (or any session with subagents), you often want to read the
 full prompt + response of each subagent without the TUI's truncation. This tool reads
-the session's JSONL log under ~/.claude/projects/<encoded-repo-path>/<uuid>.jsonl,
-pairs every Agent tool_use with its tool_result (matched by tool_use_id), and emits
-markdown.
+the session's JSONL log under ~/.claude/projects/<encoded-cwd>/<uuid>.jsonl, pairs
+every Agent tool_use with its tool_result (matched by tool_use_id), and emits
+markdown — including main-thread assistant text and Bash calls so the full session
+arc is preserved.
+
+UUIDs are resolved globally under ~/.claude/projects/ so the same UUID works from
+any working directory. With no UUID argument, falls back to the latest session in
+the cwd's project (`--list` to browse, `--commit <hash>` to locate via find-session,
+`--recurse-subagents` to inline each subagent's own trace in a collapsible block).
 
 Stdlib only.
 """
@@ -86,16 +92,18 @@ def latest_session(project_root: Path) -> Path | None:
     return sessions[0] if sessions else None
 
 
-def session_by_uuid(project_root: Path, uuid: str) -> Path | None:
-    for d in project_session_dirs(project_root):
-        cand = d / f"{uuid}.jsonl"
+def session_by_uuid(uuid: str) -> Path | None:
+    """Locate a session JSONL by UUID anywhere under ~/.claude/projects/.
+
+    Searched globally so the same UUID resolves no matter which directory the
+    caller is in. Subagent sessions live under <project>/subagents/<uuid>.jsonl
+    and are matched by the same recursive walk.
+    """
+    if not PROJECTS_DIR.is_dir():
+        return None
+    for cand in PROJECTS_DIR.rglob(f"{uuid}.jsonl"):
         if cand.is_file():
             return cand
-    # Subagent sessions live under <session>/subagents/<agent-id>.jsonl
-    for d in project_session_dirs(project_root):
-        for cand in d.rglob(f"{uuid}.jsonl"):
-            if cand.is_file():
-                return cand
     return None
 
 
@@ -353,39 +361,136 @@ def render_bash_event(ev: dict) -> str:
     return "\n".join(lines)
 
 
-def render_markdown(session_path: Path, records: list[dict], include_all: bool) -> str:
+def subagent_dir_for(jsonl_path: Path) -> Path:
+    """Where Claude Code stores subagent JSONLs spawned from `jsonl_path`.
+
+    For a main session at `<project>/<uuid>.jsonl`, subagents live at
+    `<project>/<uuid>/subagents/agent-<id>.jsonl`. The same pattern repeats if
+    a subagent itself spawns a subagent.
+    """
+    return jsonl_path.with_suffix("") / "subagents"
+
+
+def index_subagents(parent_jsonl: Path) -> list[tuple[Path, dict]]:
+    """Return [(jsonl_path, meta_dict)] for each subagent spawned from `parent_jsonl`.
+
+    Sorted by file mtime so the order roughly tracks the parent's call order —
+    enough for first-match-wins matching against agent_call events.
+    """
+    sub_dir = subagent_dir_for(parent_jsonl)
+    if not sub_dir.is_dir():
+        return []
+    out: list[tuple[Path, dict, float]] = []
+    for meta_path in sub_dir.glob("*.meta.json"):
+        jsonl = meta_path.with_name(meta_path.name[: -len(".meta.json")] + ".jsonl")
+        if not jsonl.is_file():
+            continue
+        try:
+            meta = json.loads(meta_path.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        out.append((jsonl, meta, jsonl.stat().st_mtime))
+    out.sort(key=lambda x: x[2])
+    return [(p, m) for p, m, _ in out]
+
+
+def match_subagent(
+    agent_event: dict,
+    candidates: list[tuple[Path, dict]],
+    used: set[Path],
+) -> Path | None:
+    """First unused candidate whose meta.json matches the agent_call event.
+
+    The main thread's `Agent` tool_use id does not correspond to the
+    subagent's filename `agentId`, so we match on metadata instead. Pass 1
+    requires both (description, agentType); pass 2 falls back to agentType
+    alone, in mtime order — necessary because ~45% of historical meta.json
+    files were written without a description field. Consume-once ensures
+    duplicate matches still map 1:1.
+    """
+    desc = agent_event.get("description") or ""
+    stype = agent_event.get("subagent_type")
+    for jsonl, meta in candidates:
+        if jsonl in used:
+            continue
+        if meta.get("description") != desc:
+            continue
+        if stype is not None and meta.get("agentType") != stype:
+            continue
+        used.add(jsonl)
+        return jsonl
+    for jsonl, meta in candidates:
+        if jsonl in used:
+            continue
+        if stype is not None and meta.get("agentType") != stype:
+            continue
+        used.add(jsonl)
+        return jsonl
+    return None
+
+
+def render_events(
+    events: list[dict],
+    jsonl_path: Path,
+    recurse: bool,
+    depth: int,
+    max_depth: int,
+) -> list[str]:
+    candidates = index_subagents(jsonl_path) if recurse and depth < max_depth else []
+    used: set[Path] = set()
+    pieces: list[str] = []
+    agent_idx = 0
+    for ev in events:
+        if ev["kind"] == "agent_call":
+            agent_idx += 1
+            pieces.append(render_agent_event(agent_idx, ev))
+            if recurse and depth < max_depth:
+                inner = match_subagent(ev, candidates, used)
+                if inner is not None:
+                    pieces.append(render_subagent_trace(inner, depth + 1, max_depth))
+        elif ev["kind"] == "assistant_text":
+            pieces.append(render_assistant_text_event(ev))
+        elif ev["kind"] == "bash_call":
+            pieces.append(render_bash_event(ev))
+    return pieces
+
+
+def render_subagent_trace(jsonl: Path, depth: int, max_depth: int) -> str:
+    """Render a subagent's full event timeline inside a collapsible <details> block.
+
+    Keeps the top-level scan fast; expand the block to see the subagent's own
+    bash/text/agent activity. Renders collapsibly on GitHub and most markdown
+    viewers; the pager shows it inline (still readable).
+    """
+    records = load_records(jsonl)
+    events = collect_events(records)
+    inner = render_events(events, jsonl, recurse=True, depth=depth, max_depth=max_depth)
+    body = "\n".join(inner) if inner else "(empty trace)"
+    return "\n".join([
+        "",
+        f"<details><summary>Inner trace (subagent session {jsonl.stem}, depth {depth})</summary>",
+        "",
+        body,
+        "",
+        "</details>",
+        "",
+    ])
+
+
+def render_markdown(session_path: Path, records: list[dict], recurse_subagents: bool = False) -> str:
     meta = session_metadata(records)
     events = collect_events(records)
 
     pieces = [render_header(session_path, meta)]
-
-    if include_all:
-        agent_idx = 0
-        for ev in events:
-            if ev["kind"] == "agent_call":
-                agent_idx += 1
-                pieces.append(render_agent_event(agent_idx, ev))
-            elif ev["kind"] == "assistant_text":
-                pieces.append(render_assistant_text_event(ev))
-            elif ev["kind"] == "bash_call":
-                pieces.append(render_bash_event(ev))
-    else:
-        agent_idx = 0
-        orphans = 0
-        for ev in events:
-            if ev["kind"] != "agent_call":
-                continue
-            agent_idx += 1
-            if ev.get("response") is None:
-                orphans += 1
-            pieces.append(render_agent_event(agent_idx, ev))
-        if agent_idx == 0:
-            pieces.append("\n(no subagent calls in this session — try --all to see main-thread messages)\n")
-        elif orphans:
-            sys.stderr.write(
-                f"warning: {orphans} agent call(s) had no matching tool_result\n"
-            )
-
+    pieces.extend(
+        render_events(
+            events,
+            session_path,
+            recurse=recurse_subagents,
+            depth=0,
+            max_depth=3,
+        )
+    )
     return "\n".join(pieces) + "\n"
 
 
@@ -416,18 +521,24 @@ def main() -> int:
         prog="claude-replay",
         description="Extract subagent transcripts from a Claude Code session log.",
     )
-    p.add_argument("session", nargs="?", help="session UUID (default: latest)")
-    p.add_argument("--latest", action="store_true", help="use the most recent session (default)")
-    p.add_argument("--project", help="project root path (default: git toplevel of cwd)")
-    p.add_argument("--all", action="store_true", help="include main-thread assistant text and bash output")
-    p.add_argument("--list", action="store_true", help="list sessions in the project, newest first")
+    p.add_argument(
+        "session",
+        nargs="?",
+        help="session UUID (searched globally under ~/.claude/projects/). Default: latest session in the cwd's project.",
+    )
+    p.add_argument("--latest", action="store_true", help="use the most recent session in the cwd's project (default)")
+    p.add_argument("--project", help="project root path used for --latest/--list (default: git toplevel of cwd)")
+    p.add_argument("--list", action="store_true", help="list sessions in the cwd's project, newest first")
     p.add_argument("--commit", help="locate session via `find-session <hash>` and replay it")
+    p.add_argument(
+        "--recurse-subagents",
+        action="store_true",
+        help="inline each subagent's full trace inside a collapsible block under its Agent call (depth-capped at 3)",
+    )
     args = p.parse_args()
 
-    project_root = resolve_project_root(args.project)
-
     if args.list:
-        return cmd_list(project_root)
+        return cmd_list(resolve_project_root(args.project))
 
     if args.commit:
         session_path = session_via_commit(args.commit)
@@ -435,14 +546,15 @@ def main() -> int:
             print(f"error: could not resolve session for commit {args.commit}", file=sys.stderr)
             return 1
     elif args.session:
-        session_path = session_by_uuid(project_root, args.session)
+        session_path = session_by_uuid(args.session)
         if session_path is None:
             print(
-                f"error: no session {args.session} for {project_root}",
+                f"error: no session {args.session} under {PROJECTS_DIR}",
                 file=sys.stderr,
             )
             return 1
     else:
+        project_root = resolve_project_root(args.project)
         session_path = latest_session(project_root)
         if session_path is None:
             print(
@@ -452,7 +564,7 @@ def main() -> int:
             return 1
 
     records = load_records(session_path)
-    text = render_markdown(session_path, records, include_all=args.all)
+    text = render_markdown(session_path, records, recurse_subagents=args.recurse_subagents)
 
     if sys.stdout.isatty():
         # Honour $PAGER if set; pydoc.pager respects it.
