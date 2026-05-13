@@ -1,0 +1,436 @@
+#!/usr/bin/env python3
+"""claude-replay - Extract subagent transcripts from a Claude Code session JSONL log.
+
+After an /auto-task run (or any session with subagents), you often want to read the
+full prompt + response of each subagent without the TUI's truncation. This tool reads
+the session's JSONL log under ~/.claude/projects/<encoded-repo-path>/<uuid>.jsonl,
+pairs every Agent tool_use with its tool_result (matched by tool_use_id), and emits
+markdown.
+
+Stdlib only.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+from pydoc import pager
+
+
+PROJECTS_DIR = Path.home() / ".claude" / "projects"
+
+
+# ---------------------------------------------------------------------------
+# Locating sessions
+# ---------------------------------------------------------------------------
+
+
+def encode_project_path(path: Path) -> str:
+    """Mirror Claude Code's project-dir encoding: replace / with -."""
+    return str(path).replace("/", "-")
+
+
+def resolve_project_root(explicit: str | None) -> Path:
+    if explicit:
+        return Path(explicit).expanduser().resolve()
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return Path(out.stdout.strip())
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return Path.cwd()
+
+
+def project_session_dir(project_root: Path) -> Path:
+    return PROJECTS_DIR / encode_project_path(project_root)
+
+
+def list_sessions(project_root: Path) -> list[Path]:
+    d = project_session_dir(project_root)
+    if not d.is_dir():
+        return []
+    files = [p for p in d.iterdir() if p.is_file() and p.suffix == ".jsonl"]
+    files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    return files
+
+
+def latest_session(project_root: Path) -> Path | None:
+    sessions = list_sessions(project_root)
+    return sessions[0] if sessions else None
+
+
+def session_by_uuid(project_root: Path, uuid: str) -> Path | None:
+    cand = project_session_dir(project_root) / f"{uuid}.jsonl"
+    return cand if cand.is_file() else None
+
+
+def session_via_commit(commit: str) -> Path | None:
+    """Use `find-session <hash>` to locate the authoring session, return its jsonl path."""
+    try:
+        out = subprocess.run(
+            ["find-session", commit],
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        print("error: find-session not on PATH", file=sys.stderr)
+        return None
+    if out.returncode != 0:
+        # find-session printed diagnostics to stderr; surface and bail
+        sys.stderr.write(out.stderr)
+        sys.stderr.write(out.stdout)
+        return None
+    uuid = None
+    for line in out.stdout.splitlines():
+        line = line.strip()
+        if line.startswith("[authoring]"):
+            # Format: "[authoring] <uuid>"
+            parts = line.split()
+            if len(parts) >= 2:
+                uuid = parts[1]
+                break
+    if uuid is None:
+        sys.stderr.write(out.stdout)
+        return None
+    # Search every project (and its subagents/ dirs) for this uuid.
+    for cand in PROJECTS_DIR.rglob(f"{uuid}.jsonl"):
+        if cand.is_file():
+            return cand
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Parsing
+# ---------------------------------------------------------------------------
+
+
+def load_records(path: Path) -> list[dict]:
+    records = []
+    with path.open() as f:
+        for i, line in enumerate(f, 1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                records.append(json.loads(line))
+            except json.JSONDecodeError as exc:
+                print(f"warning: skipping malformed line {i}: {exc}", file=sys.stderr)
+    return records
+
+
+def extract_text(content) -> str:
+    """Normalise message.content (str or list-of-blocks) to plain text."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        chunks = []
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            t = block.get("type")
+            if t == "text":
+                chunks.append(block.get("text", ""))
+            # tool_use / tool_result / image blocks: skip (handled separately)
+        return "\n".join(chunks)
+    return ""
+
+
+def extract_tool_result_text(tr_content) -> str:
+    """tool_result.content can be a string or a list of blocks."""
+    if isinstance(tr_content, str):
+        return tr_content
+    if isinstance(tr_content, list):
+        chunks = []
+        for block in tr_content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                chunks.append(block.get("text", ""))
+        return "\n".join(chunks)
+    return ""
+
+
+def session_metadata(records: list[dict]) -> dict:
+    meta = {"session_id": None, "project": None, "started": None, "title": None}
+    for rec in records:
+        t = rec.get("type")
+        if t == "user" and rec.get("parentUuid") is None and meta["started"] is None:
+            meta["started"] = rec.get("timestamp")
+            meta["project"] = rec.get("cwd")
+            meta["session_id"] = rec.get("sessionId") or meta["session_id"]
+        if t == "ai-title" and not meta["title"]:
+            meta["title"] = rec.get("aiTitle")
+        if rec.get("sessionId") and not meta["session_id"]:
+            meta["session_id"] = rec["sessionId"]
+    return meta
+
+
+def collect_events(records: list[dict]) -> list[dict]:
+    """Walk records once; yield a chronological list of events.
+
+    Each event is a dict with: kind (agent_call | assistant_text | bash_call | bash_result),
+    timestamp, and kind-specific fields.
+
+    Agent calls are paired with their tool_result text. Bash calls likewise.
+    """
+    # Build tool_use_id -> tool_result_text lookup from user records.
+    tool_results: dict[str, str] = {}
+    for rec in records:
+        if rec.get("type") != "user":
+            continue
+        content = rec.get("message", {}).get("content")
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "tool_result":
+                tid = block.get("tool_use_id")
+                if tid:
+                    tool_results[tid] = extract_tool_result_text(block.get("content"))
+
+    events = []
+    for rec in records:
+        if rec.get("type") != "assistant":
+            continue
+        ts = rec.get("timestamp")
+        content = rec.get("message", {}).get("content")
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            btype = block.get("type")
+            if btype == "tool_use" and block.get("name") == "Agent":
+                inp = block.get("input", {}) or {}
+                tid = block.get("id")
+                events.append({
+                    "kind": "agent_call",
+                    "timestamp": ts,
+                    "id": tid,
+                    "description": inp.get("description", ""),
+                    "subagent_type": inp.get("subagent_type"),
+                    "prompt": inp.get("prompt", ""),
+                    "response": tool_results.get(tid),
+                })
+            elif btype == "tool_use" and block.get("name") == "Bash":
+                inp = block.get("input", {}) or {}
+                tid = block.get("id")
+                events.append({
+                    "kind": "bash_call",
+                    "timestamp": ts,
+                    "id": tid,
+                    "command": inp.get("command", ""),
+                    "description": inp.get("description", ""),
+                    "output": tool_results.get(tid),
+                })
+            elif btype == "text":
+                text = block.get("text", "").strip()
+                if text:
+                    events.append({
+                        "kind": "assistant_text",
+                        "timestamp": ts,
+                        "text": text,
+                    })
+    return events
+
+
+# ---------------------------------------------------------------------------
+# Rendering
+# ---------------------------------------------------------------------------
+
+
+def render_header(session_path: Path, meta: dict) -> str:
+    uuid = session_path.stem
+    lines = [f"# Claude Code session {uuid}", ""]
+    if meta.get("project"):
+        lines.append(f"Project: {meta['project']}")
+    if meta.get("started"):
+        lines.append(f"Started: {meta['started']}")
+    if meta.get("title"):
+        lines.append(f"Title: {meta['title']}")
+    lines.append("")
+    lines.append("---")
+    return "\n".join(lines)
+
+
+def render_agent_event(idx: int, ev: dict) -> str:
+    desc = ev.get("description") or "(no description)"
+    stype = ev.get("subagent_type")
+    suffix = f" [{stype}]" if stype else ""
+    out = [
+        "",
+        f"## Subagent {idx}: {desc}{suffix}",
+        f"Time: {ev.get('timestamp')}",
+        "",
+        "### Prompt",
+        "",
+        ev.get("prompt") or "(empty prompt)",
+        "",
+        "### Response",
+        "",
+    ]
+    resp = ev.get("response")
+    if resp is None:
+        out.append("(no matching tool_result — orphan prompt)")
+    else:
+        out.append(resp or "(empty response)")
+    out.append("")
+    out.append("---")
+    return "\n".join(out)
+
+
+def render_assistant_text_event(ev: dict) -> str:
+    return "\n".join([
+        "",
+        f"## Main-thread message",
+        f"Time: {ev.get('timestamp')}",
+        "",
+        ev.get("text", ""),
+        "",
+        "---",
+    ])
+
+
+def render_bash_event(ev: dict) -> str:
+    cmd = ev.get("command", "")
+    desc = ev.get("description") or ""
+    out_text = ev.get("output")
+    lines = [
+        "",
+        "## Bash call",
+        f"Time: {ev.get('timestamp')}",
+    ]
+    if desc:
+        lines.append(f"Description: {desc}")
+    lines += [
+        "",
+        "### Command",
+        "",
+        "```",
+        cmd,
+        "```",
+        "",
+        "### Output",
+        "",
+    ]
+    lines.append("```")
+    lines.append(out_text if out_text is not None else "(no matching tool_result)")
+    lines.append("```")
+    lines.append("")
+    lines.append("---")
+    return "\n".join(lines)
+
+
+def render_markdown(session_path: Path, records: list[dict], include_all: bool) -> str:
+    meta = session_metadata(records)
+    events = collect_events(records)
+
+    pieces = [render_header(session_path, meta)]
+
+    if include_all:
+        agent_idx = 0
+        for ev in events:
+            if ev["kind"] == "agent_call":
+                agent_idx += 1
+                pieces.append(render_agent_event(agent_idx, ev))
+            elif ev["kind"] == "assistant_text":
+                pieces.append(render_assistant_text_event(ev))
+            elif ev["kind"] == "bash_call":
+                pieces.append(render_bash_event(ev))
+    else:
+        agent_idx = 0
+        orphans = 0
+        for ev in events:
+            if ev["kind"] != "agent_call":
+                continue
+            agent_idx += 1
+            if ev.get("response") is None:
+                orphans += 1
+            pieces.append(render_agent_event(agent_idx, ev))
+        if agent_idx == 0:
+            pieces.append("\n(no subagent calls in this session — try --all to see main-thread messages)\n")
+        elif orphans:
+            sys.stderr.write(
+                f"warning: {orphans} agent call(s) had no matching tool_result\n"
+            )
+
+    return "\n".join(pieces) + "\n"
+
+
+# ---------------------------------------------------------------------------
+# Subcommands
+# ---------------------------------------------------------------------------
+
+
+def cmd_list(project_root: Path) -> int:
+    sessions = list_sessions(project_root)
+    if not sessions:
+        print(f"no sessions in {project_session_dir(project_root)}")
+        return 0
+    for s in sessions:
+        records = load_records(s)
+        meta = session_metadata(records)
+        ts = meta.get("started") or "?"
+        title = meta.get("title") or "(no title)"
+        print(f"{s.stem}  {ts}  {title}")
+    return 0
+
+
+def main() -> int:
+    p = argparse.ArgumentParser(
+        prog="claude-replay",
+        description="Extract subagent transcripts from a Claude Code session log.",
+    )
+    p.add_argument("session", nargs="?", help="session UUID (default: latest)")
+    p.add_argument("--latest", action="store_true", help="use the most recent session (default)")
+    p.add_argument("--project", help="project root path (default: git toplevel of cwd)")
+    p.add_argument("--all", action="store_true", help="include main-thread assistant text and bash output")
+    p.add_argument("--list", action="store_true", help="list sessions in the project, newest first")
+    p.add_argument("--commit", help="locate session via `find-session <hash>` and replay it")
+    args = p.parse_args()
+
+    project_root = resolve_project_root(args.project)
+
+    if args.list:
+        return cmd_list(project_root)
+
+    if args.commit:
+        session_path = session_via_commit(args.commit)
+        if session_path is None:
+            print(f"error: could not resolve session for commit {args.commit}", file=sys.stderr)
+            return 1
+    elif args.session:
+        session_path = session_by_uuid(project_root, args.session)
+        if session_path is None:
+            print(
+                f"error: no session {args.session} in {project_session_dir(project_root)}",
+                file=sys.stderr,
+            )
+            return 1
+    else:
+        session_path = latest_session(project_root)
+        if session_path is None:
+            print(
+                f"error: no sessions in {project_session_dir(project_root)}",
+                file=sys.stderr,
+            )
+            return 1
+
+    records = load_records(session_path)
+    text = render_markdown(session_path, records, include_all=args.all)
+
+    if sys.stdout.isatty():
+        # Honour $PAGER if set; pydoc.pager respects it.
+        pager(text)
+    else:
+        sys.stdout.write(text)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
