@@ -1,0 +1,5 @@
+schedule: "0 3 * * *"
+
+steps:
+  - name: tad-pipeline
+    command: bash -c 'cd "${HOME}/github/tad/backend" && uv run tad pipeline run -v'
