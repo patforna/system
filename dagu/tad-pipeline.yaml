@@ -1,4 +1,4 @@
-schedule: "0 3 * * *"
+schedule: "0 3 * * 2-6"
 
 steps:
   - name: tad-pipeline
