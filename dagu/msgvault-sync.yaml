@@ -1,4 +1,4 @@
-schedule: "0 9 * * *"
+schedule: "0 0 * * *"
 
 steps:
   - name: msgvault-sync

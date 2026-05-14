@@ -36,7 +36,7 @@ max_output_size: 1048576  # 1MB (bytes)
 # Lookback window for replaying missed scheduled runs after downtime.
 # On scheduler restart, all missed cron intervals within this window are executed (max 1000).
 # Duration string: e.g. "6h", "24h", "2d12h". Empty = no catchup (missed runs discarded).
-catchup_window: "6h"
+catchup_window: "24h"
 
 # -- Shell --
 # Shell interpreter for command steps.
