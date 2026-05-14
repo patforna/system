@@ -39,13 +39,15 @@ github_repo_url() {
 }
 GITHUB_REPO_URL=$(github_repo_url)
 
-# Latest autofix entry for one DAG within a window. Prints
-# "<outcome>\t<note>\t<commit>" or empty if none. Requires jq.
-latest_autofix() {
-  local dag="$1" since="$2"
-  [[ -f "$AUTOFIX_LOG" ]] || return
-  jq -r --arg dag "$dag" --arg since "$since" \
-    'select(.dag == $dag and .ts >= $since) | "\(.outcome)\t\(.note)\t\(.commit // "")"' \
+# Autofix entry for a specific run_id. Prints "<outcome>\t<note>\t<commit>"
+# or empty if none. We match by run_id (not by time window) so the digest's
+# narrative for a failed row reflects what autofix did for *that* run, not
+# whatever it last did for the DAG.
+autofix_for_run() {
+  local run_id="$1"
+  [[ -z "$run_id" || ! -f "$AUTOFIX_LOG" ]] && return
+  jq -r --arg rid "$run_id" \
+    'select(.run_id == $rid) | "\(.outcome)\t\(.note)\t\(.commit // "")"' \
     "$AUTOFIX_LOG" 2>/dev/null | tail -1
 }
 
@@ -99,6 +101,19 @@ step_output_tail() {
   fi
 }
 
+# Parse a dag-run dirname like `dag-run_20260513_081400Z_<run-id>`.
+rundir_started_utc() {
+  local base
+  base=$(basename "$1")
+  if [[ "$base" =~ dag-run_([0-9]{4})([0-9]{2})([0-9]{2})_([0-9]{2})([0-9]{2})[0-9]{2}Z ]]; then
+    echo "${BASH_REMATCH[1]}-${BASH_REMATCH[2]}-${BASH_REMATCH[3]} ${BASH_REMATCH[4]}:${BASH_REMATCH[5]} UTC"
+  fi
+}
+
+rundir_run_id() {
+  basename "$1" | sed -E 's/^dag-run_[0-9]+_[0-9]+Z_//'
+}
+
 # If the autofix handler itself errored, print the first stderr line.
 handler_crash_line() {
   local rundir="$1"
@@ -112,7 +127,6 @@ handler_crash_line() {
 }
 
 attn_count=0
-note_count=0
 rows=""
 details=""
 
@@ -129,38 +143,45 @@ for f in "$DAGS_DIR"/*.yaml; do
     autofix_since="$AUTOFIX_SINCE_24H"
   fi
 
-  read -r runs ok failed < <("$DAGU" history "$dag" --last "$window" --format csv 2>/dev/null | awk -F',' '
+  # Pull both the counts and the *latest* run's status. We gate ATTN on the
+  # latest, not on any failure in the window, so a transient failure that has
+  # since recovered (next scheduled run, or autofix + retry) doesn't keep
+  # nagging until it falls out of the 24h window.
+  read -r runs ok failed latest_status < <("$DAGU" history "$dag" --last "$window" --format csv 2>/dev/null | awk -F',' '
     NR>1 {
       total++
+      if (latest == "") latest = $3
       if ($3 == "Succeeded") ok++
       else if ($3 == "Failed") failed++
     }
-    END { printf "%d %d %d\n", total+0, ok+0, failed+0 }
+    END { printf "%d %d %d %s\n", total+0, ok+0, failed+0, (latest=="" ? "-" : latest) }
   ')
-
-  af=$(latest_autofix "$dag" "$autofix_since")
-  af_outcome=""
-  af_note=""
-  af_commit=""
-  if [[ -n "$af" ]]; then
-    IFS=$'\t' read -r af_outcome af_note af_commit <<< "$af"
-  fi
 
   marker="OK  "
   comment=""
   detail_block=""
 
-  if (( failed > 0 )); then
-    if [[ -n "$af_outcome" ]]; then
-      comment="${af_outcome}: ${af_note}"
-      if [[ "$af_outcome" == "escalated" || "$af_outcome" == "unhandled" ]]; then
-        marker="ATTN"
-        attn_count=$((attn_count + 1))
-      else
-        note_count=$((note_count + 1))
-      fi
+  if [[ "$latest_status" == "Failed" ]]; then
+    marker="ATTN"
+    attn_count=$((attn_count + 1))
 
-      detail_block="  ${dag} (${af_outcome})"$'\n'
+    rundir=$(latest_failed_dagrun_dir "$dag")
+    failed_at=$(rundir_started_utc "$rundir")
+    failed_run_id=$(rundir_run_id "$rundir")
+    crash_line=$(handler_crash_line "$rundir")
+    out_tail=$(step_output_tail "$rundir" "$dag" 10)
+
+    af=$(autofix_for_run "$failed_run_id")
+    af_outcome=""
+    af_note=""
+    af_commit=""
+    if [[ -n "$af" ]]; then
+      IFS=$'\t' read -r af_outcome af_note af_commit <<< "$af"
+    fi
+
+    if [[ -n "$af_outcome" ]]; then
+      comment="failed at ${failed_at}; ${af_outcome}: ${af_note}"
+      detail_block="  ${dag} (failed at ${failed_at}; ${af_outcome})"$'\n'
       detail_block+="    ${af_note}"$'\n'
       if [[ -n "$af_commit" ]]; then
         subject_line=$(commit_subject "$af_commit")
@@ -174,37 +195,25 @@ for f in "$DAGS_DIR"/*.yaml; do
           detail_block+="    ${GITHUB_REPO_URL}/commit/${af_commit}"$'\n'
         fi
       fi
+    elif [[ -n "$crash_line" ]]; then
+      comment="failed at ${failed_at}; autofix handler crashed"
+      detail_block="  ${dag} (failed at ${failed_at}; autofix handler crashed)"$'\n'
+      detail_block+="    handler error: ${crash_line}"$'\n'
     else
-      marker="ATTN"
-      attn_count=$((attn_count + 1))
-
-      rundir=$(latest_failed_dagrun_dir "$dag")
-      crash_line=$(handler_crash_line "$rundir")
-      out_tail=$(step_output_tail "$rundir" "$dag" 10)
-
-      if [[ -n "$crash_line" ]]; then
-        comment="failure; autofix handler crashed"
-        detail_block="  ${dag} (autofix handler crashed)"$'\n'
-        detail_block+="    handler error: ${crash_line}"$'\n'
-      else
-        comment="failure with no autofix record"
-        detail_block="  ${dag} (no autofix record)"$'\n'
-        detail_block+="    ${failed} failed run(s) in ${window} but no entry in dagu-autofix.jsonl."$'\n'
-      fi
-
-      if [[ -n "$out_tail" ]]; then
-        while IFS= read -r line; do
-          detail_block+="      ${line}"$'\n'
-        done <<< "$out_tail"
-      else
-        detail_block+="    (no step output captured — check ${DAGU_LOG_DIR}/${dag}/)"$'\n'
-      fi
+      comment="failed at ${failed_at}; no autofix record"
+      detail_block="  ${dag} (failed at ${failed_at}; no autofix record)"$'\n'
     fi
+
+    if [[ -n "$out_tail" ]]; then
+      while IFS= read -r line; do
+        detail_block+="      ${line}"$'\n'
+      done <<< "$out_tail"
+    fi
+
   elif (( runs == 0 )) && [[ "$dag" != "$SELF" ]]; then
     last_line=$("$DAGU" status "$dag" 2>/dev/null | head -1)
     if [[ -z "$last_line" ]]; then
       comment="never run yet"
-      note_count=$((note_count + 1))
       detail_block="  ${dag} (pending)"$'\n'
       detail_block+="    No history yet — first scheduled run still ahead."$'\n'
     else
@@ -231,8 +240,6 @@ done
 
 if (( attn_count > 0 )); then
   subject="[DAGU] Daily digest — ${attn_count} need attention"
-elif (( note_count > 0 )); then
-  subject="[DAGU] Daily digest — all ok (${note_count} notes)"
 else
   subject="[DAGU] Daily digest — all ok"
 fi
