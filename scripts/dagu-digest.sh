@@ -56,12 +56,22 @@ commit_subject() {
   git -C "$SYSTEM_REPO" show -s --format='%s' "$sha" 2>/dev/null || true
 }
 
-# Path of the most recent dag-run dir for a DAG (or empty).
-latest_dagrun_dir() {
+# Path of the most recent FAILED dag-run dir for a DAG (or empty). We need
+# the failed dir specifically so the Details block surfaces context from the
+# actual failure rather than from a more recent successful run.
+latest_failed_dagrun_dir() {
   local dag="$1"
   local d="${DAGU_LOG_DIR}/${dag}"
   [[ -d "$d" ]] || return
-  ls -td "$d"/dag-run_* 2>/dev/null | head -1
+  local rd toplog
+  while IFS= read -r rd; do
+    toplog=$(ls "$rd"/dag-run_*.log 2>/dev/null | head -1)
+    [[ -z "$toplog" ]] && continue
+    if grep -q 'status=failed' "$toplog" 2>/dev/null; then
+      echo "$rd"
+      return
+    fi
+  done < <(ls -td "$d"/dag-run_* 2>/dev/null)
 }
 
 # Show the most useful slice of the failing step's output. Errors usually
@@ -168,7 +178,7 @@ for f in "$DAGS_DIR"/*.yaml; do
       marker="ATTN"
       attn_count=$((attn_count + 1))
 
-      rundir=$(latest_dagrun_dir "$dag")
+      rundir=$(latest_failed_dagrun_dir "$dag")
       crash_line=$(handler_crash_line "$rundir")
       out_tail=$(step_output_tail "$rundir" "$dag" 10)
 
