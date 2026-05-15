@@ -20,19 +20,20 @@
 [core]
 	editor = nvim
 	autocrlf = false
+	pager = delta
 
 [color]
 	ui = auto
 [delta]
 	navigate = true
 	line-numbers = true
+	hyperlinks = true
+	hyperlinks-file-link-format = "vscode://file/{path}:{line}"
 [interactive]
 	diffFilter = delta --color-only
-[pager]
-	diff = delta
-	log = delta
-	reflog = delta
-	show = delta
+
+[alias]
+	sbs = -c delta.side-by-side=true diff
 
 [rerere]
 	enabled = true

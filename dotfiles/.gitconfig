@@ -22,6 +22,7 @@
 [core]
 	editor = nvim
 	autocrlf = false
+	pager = delta         # catch-all diff pager: diff, show, log, range-diff, stash show -p, …
 
 # --- Colors & pager (delta) ---
 [color]
@@ -29,13 +30,14 @@
 [delta]
 	navigate = true       # jump between hunks with n/N
 	line-numbers = true
+	hyperlinks = true     # OSC 8 clickable paths (Ghostty supports)
+	hyperlinks-file-link-format = "vscode://file/{path}:{line}"   # click a path -> open VS Code at that line
 [interactive]
 	diffFilter = delta --color-only
-[pager]
-	diff = delta
-	log = delta
-	reflog = delta
-	show = delta
+
+# --- Aliases ---
+[alias]
+	sbs = -c delta.side-by-side=true diff   # wide-window side-by-side review: git sbs main...HEAD
 
 # --- Rerere keeps conflict resolutions for reuse ---
 [rerere]

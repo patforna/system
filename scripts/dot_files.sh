@@ -66,6 +66,7 @@ link "${PUBLIC}/.config/starship.toml"             "${HOME}/.config/starship.tom
 link "${PUBLIC}/.config/atuin/config.toml"         "${HOME}/.config/atuin/config.toml"
 link "${PUBLIC}/.config/btop/btop.conf"            "${HOME}/.config/btop/btop.conf"
 link "${PUBLIC}/.config/gh/config.yml"             "${HOME}/.config/gh/config.yml"
+link "${PUBLIC}/.config/lazygit/config.yml"        "${HOME}/.config/lazygit/config.yml"
 link "${PUBLIC}/.config/git/ignore"                "${HOME}/.config/git/ignore"
 link "${PUBLIC}/.config/fd/config"                 "${HOME}/.config/fd/config"
 link "${PUBLIC}/.config/gcloud/configurations/config_default" "${HOME}/.config/gcloud/configurations/config_default"
