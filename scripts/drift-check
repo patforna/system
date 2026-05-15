@@ -168,6 +168,33 @@ else
   ok "uv not installed (skipping uv tool check)"
 fi
 
+# --- npm globals ---
+section "npm globals"
+if command -v npm &>/dev/null; then
+  brewfile_npm=$(grep '^npm ' "$BREWFILE" | sed 's/^npm "\(.*\)"/\1/' | sort)
+  # `npm ls -g --depth=0 --json` survives broken symlinks; fall back to parsing text
+  installed_npm=$(npm ls -g --depth=0 --json 2>/dev/null | jq -r '(.dependencies // {}) | keys[]' 2>/dev/null | sort)
+  npm_drift_count=${#DRIFT[@]}
+
+  while IFS= read -r pkg; do
+    [[ -z "$pkg" ]] && continue
+    # npm itself ships with node and is not tracked in Brewfile
+    [[ "$pkg" == "npm" ]] && continue
+    drift "npm global '$pkg' installed but not in Brewfile"
+  done < <(comm -23 <(echo "$installed_npm") <(echo "$brewfile_npm"))
+
+  while IFS= read -r pkg; do
+    [[ -z "$pkg" ]] && continue
+    drift "npm global '$pkg' in Brewfile but not installed"
+  done < <(comm -13 <(echo "$installed_npm") <(echo "$brewfile_npm"))
+
+  if [[ ${#DRIFT[@]} -eq $npm_drift_count ]]; then
+    ok "npm globals match Brewfile"
+  fi
+else
+  ok "npm not installed (skipping npm globals check)"
+fi
+
 # --- Symlinks ---
 section "Symlinks"
 
