@@ -2,6 +2,8 @@
   // --- UI / Look & Feel ---
   "workbench.colorTheme": "One Dark Pro",
   "workbench.activityBar.orientation": "vertical",
+  "workbench.secondarySideBar.defaultVisibility": "hidden",
+  "window.zoomLevel": -1,
   "editor.fontFamily": "JetBrains Mono",
   "editor.fontSize": 15,
   "terminal.integrated.fontSize": 15,
