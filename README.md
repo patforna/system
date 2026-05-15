@@ -80,7 +80,7 @@ Usage data is fetched from Anthropic's OAuth endpoint using Claude Code's own cr
 
 | Command | Purpose |
 |---------|---------|
-| `find-session <hash>` | Locate the Claude Code session that made a given git commit. Matches the `[branch hash]` signature `git commit` prints; falls back to timestamp-sorted hash mentions when the signature wasn't captured (e.g. subagent/headless commits). Pass `--repo` to narrow to the current repo's sessions. |
+| `find-session <hash\|text>` | Locate a Claude Code session by commit hash or by text — mode auto-detected (hex that resolves to a commit ⇒ hash mode, else text). Hash mode matches the `[branch hash]` signature `git commit` prints, falling back to timestamp-sorted hash mentions when it wasn't captured (e.g. subagent/headless commits). Text mode lists sessions whose transcript matches, newest first; `--prompts-only` restricts to your messages. Pass `--repo` to narrow to the current repo's sessions. |
 | `claude-replay`       | Extract a Claude Code session transcript into readable markdown — full subagent prompts/responses, main-thread text, and Bash calls, no TUI truncation. UUIDs resolve globally, so `claude-replay <uuid>` works from any directory; with no arg, falls back to the latest session in the cwd's project. Use `--list` to browse, `--commit <hash>` to locate a session via `find-session`. |
 | `drift-check`         | Detect untracked dotfiles, Brewfile drift, and Mac ↔ Linux config divergence. Runs daily via Dagu. Exits 1 on drift, which triggers an autofix attempt via the dagu failure handler. |
 | `dev-up` / `dev-down` | Bring the remote dev droplet up/down and sync local SSH config. |

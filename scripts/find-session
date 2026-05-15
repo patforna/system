@@ -1,36 +1,94 @@
 #!/usr/bin/env bash
-# find-session - Locate the Claude Code session that made a given git commit.
+# find-session - Locate a Claude Code session by commit hash or by text.
 #
-# Searches ~/.claude/projects/ for sessions whose transcript contains the
-# `[<branch> <hash>]` signature that `git commit` prints on success. That's
-# the authoring tell — plain hash mentions from `git log` don't have brackets.
+# Two modes, auto-detected from the query:
 #
-# If the authoring signature isn't found (e.g. the commit was made by a
-# subagent/headless call whose stdout wasn't captured), falls back to listing
-# every session that mentions the hash, split by whether the session started
-# before or after the commit.
+#   hash mode  - query is hex (7-40 chars) AND resolves to a commit in the
+#                current repo. Searches ~/.claude/projects/ for the session
+#                whose transcript contains the `[<branch> <hash>]` signature
+#                that `git commit` prints on success. That's the authoring
+#                tell - plain hash mentions from `git log` don't have brackets.
+#                If the authoring signature isn't found (e.g. a subagent/
+#                headless commit whose stdout wasn't captured), falls back to
+#                every session mentioning the hash, split by whether it
+#                started before or after the commit.
+#
+#   text mode  - anything else. Lists every session whose transcript matches
+#                the query (literal, smart-case), newest first, with a snippet
+#                of the first hit. By default the whole transcript is searched
+#                (your prompts, my replies, tool calls/output); --prompts-only
+#                restricts to your user messages.
+#
+# A hex query that doesn't resolve to a commit falls through to text mode, so
+# searching for a short hex string still works.
 #
 # Usage:
-#   find-session <hash>          # search all Claude projects (default)
-#   find-session <hash> --repo   # narrow to the current git repo's project
+#   find-session <hash>                      # hash mode (auto)
+#   find-session <hash> --repo               # narrow to current repo's project
+#   find-session <text>                      # text mode (auto), full transcript
+#   find-session <text> --prompts-only       # text mode, user prompts only
+#   find-session <text> --repo -p            # flags combine, any order
 #
 # Exit codes:
-#   0  authoring session found
-#   2  hash not found, or only post-commit references (ambiguous)
+#   0  hash: authoring session found  |  text: at least one match
+#   2  hash: not found / only post-commit refs  |  text: no match
 #   1  usage / environment error
 
 set -euo pipefail
 
-HASH="${1:-}"
-SCOPE="${2:---all}"
+PROJECTS_DIR="$HOME/.claude/projects"
 
-if [[ -z "$HASH" ]]; then
-    echo "usage: find-session <hash> [--repo]" >&2
+usage() {
+    cat <<'EOF'
+find-session - locate a Claude Code session by commit hash or by text.
+
+Usage:
+  find-session <hash>                  hash mode (auto): authoring session
+  find-session <hash> --repo           narrow to the current repo's project
+  find-session <text>                  text mode (auto): full transcript
+  find-session <text> --prompts-only   text mode: your user messages only
+  find-session <text> --repo -p        flags combine, any order
+
+Mode is auto-detected: a hex query (7-40 chars) that resolves to a commit
+uses hash mode; anything else (incl. non-resolving hex) uses text mode.
+
+Exit codes:
+  0  hash: authoring session found  |  text: at least one match
+  2  hash: not found / only post-commit refs  |  text: no match
+  1  usage / environment error
+EOF
+}
+
+# ---- arg parsing ---------------------------------------------------------
+# First positional is the query; flags may appear in any order around it.
+QUERY=""
+SCOPE="--all"
+PROMPTS_ONLY=0
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --repo)               SCOPE="--repo" ;;
+        --all)                SCOPE="--all" ;;
+        --prompts-only|-p)    PROMPTS_ONLY=1 ;;
+        -h|--help)            usage; exit 0 ;;
+        --)                   shift; [[ -n "${1:-}" && -z "$QUERY" ]] && QUERY="$1" ;;
+        -*)                   echo "unknown flag: $1" >&2; exit 1 ;;
+        *)
+            if [[ -z "$QUERY" ]]; then
+                QUERY="$1"
+            else
+                echo "unexpected argument: $1" >&2; exit 1
+            fi ;;
+    esac
+    shift
+done
+
+if [[ -z "$QUERY" ]]; then
+    echo "usage: find-session <hash|text> [--repo] [--prompts-only]" >&2
     exit 1
 fi
 
-PROJECTS_DIR="$HOME/.claude/projects"
-
+# ---- scope ---------------------------------------------------------------
 case "$SCOPE" in
     --all)
         SEARCH_ROOT="$PROJECTS_DIR" ;;
@@ -42,15 +100,21 @@ case "$SCOPE" in
         SLUG="${REPO_ROOT//\//-}"
         SEARCH_ROOT="$PROJECTS_DIR/$SLUG"
         [[ -d "$SEARCH_ROOT" ]] || { echo "no Claude sessions for this repo" >&2; exit 1; } ;;
-    *)
-        echo "unknown flag: $SCOPE" >&2; exit 1 ;;
 esac
 
-# Author-time cutoff for distinguishing authoring vs references.
-COMMIT_TIME=$(git show -s --format=%aI "$HASH" 2>/dev/null || true)
+# ---- mode detection ------------------------------------------------------
+# Hash mode only when the query looks like a hash AND git can resolve it to a
+# commit; otherwise text mode (so a non-resolving hex string still searches).
+MODE="text"
+if [[ "$QUERY" =~ ^[0-9a-f]{7,40}$ ]] \
+   && git rev-parse --verify --quiet "${QUERY}^{commit}" >/dev/null 2>&1; then
+    MODE="hash"
+fi
 
-# Extract (session_id, start_ts) from a transcript file. Start ts comes
-# from the first user message (parentUuid==null, type==user).
+# ---- shared helpers ------------------------------------------------------
+
+# Extract session start timestamp from the first user message
+# (parentUuid==null, type==user).
 session_start_ts() {
     local file=$1
     rg -m1 --no-messages '"parentUuid":null[^}]*"type":"user"' "$file" 2>/dev/null \
@@ -58,7 +122,7 @@ session_start_ts() {
 }
 
 print_session() {
-    local file=$1 label=$2
+    local file=$1 label=$2 snippet="${3:-}"
     local session
     session=$(basename "$file" .jsonl)
     local first_line
@@ -73,59 +137,134 @@ print_session() {
         ' 2>/dev/null || true)
     fi
     echo "[$label] $session"
-    [[ -n "$ts" ]]     && echo "  started: $ts"
-    [[ -n "$prompt" ]] && printf '  prompt:  %s\n' "${prompt//$'\n'/$'\n           '}"
+    [[ -n "$ts" ]]      && echo "  started: $ts"
+    [[ -n "$prompt" ]]  && printf '  prompt:  %s\n' "${prompt//$'\n'/$'\n           '}"
+    [[ -n "$snippet" ]] && printf '  match:   %s\n' "$snippet"
     echo "  resume:  claude --resume $session"
     echo
 }
 
-# Primary search: authoring signature.
-SIG_PATTERN="\[[A-Za-z0-9/_.-]+ ${HASH}[0-9a-f]*\]"
-SIG_MATCHES=$(rg -l --no-messages -- "$SIG_PATTERN" "$SEARCH_ROOT" 2>/dev/null || true)
+# ==========================================================================
+# HASH MODE  (behaviour unchanged - claude-replay parses "[authoring] <uuid>")
+# ==========================================================================
+if [[ "$MODE" == "hash" ]]; then
+    HASH="$QUERY"
+    COMMIT_TIME=$(git show -s --format=%aI "$HASH" 2>/dev/null || true)
 
-# Partition signature matches by commit-time cutoff.
-AUTHORED=()
-POST_AUTHORED=()
-while IFS= read -r file; do
-    [[ -z "$file" ]] && continue
-    ts=$(session_start_ts "$file")
-    if [[ -n "$COMMIT_TIME" && -n "$ts" && "$ts" > "$COMMIT_TIME" ]]; then
-        POST_AUTHORED+=("$file")
-    else
-        AUTHORED+=("$file")
+    SIG_PATTERN="\[[A-Za-z0-9/_.-]+ ${HASH}[0-9a-f]*\]"
+    SIG_MATCHES=$(rg -l --no-messages -- "$SIG_PATTERN" "$SEARCH_ROOT" 2>/dev/null || true)
+
+    AUTHORED=()
+    POST_AUTHORED=()
+    while IFS= read -r file; do
+        [[ -z "$file" ]] && continue
+        ts=$(session_start_ts "$file")
+        if [[ -n "$COMMIT_TIME" && -n "$ts" && "$ts" > "$COMMIT_TIME" ]]; then
+            POST_AUTHORED+=("$file")
+        else
+            AUTHORED+=("$file")
+        fi
+    done <<< "$SIG_MATCHES"
+
+    if [[ ${#AUTHORED[@]} -gt 0 ]]; then
+        for f in "${AUTHORED[@]}"; do print_session "$f" "authoring"; done
+        [[ ${#POST_AUTHORED[@]} -gt 0 ]] \
+            && echo "(skipped ${#POST_AUTHORED[@]} post-commit session(s) that echoed the signature)"
+        exit 0
     fi
-done <<< "$SIG_MATCHES"
 
-if [[ ${#AUTHORED[@]} -gt 0 ]]; then
-    for f in "${AUTHORED[@]}"; do print_session "$f" "authoring"; done
-    [[ ${#POST_AUTHORED[@]} -gt 0 ]] \
-        && echo "(skipped ${#POST_AUTHORED[@]} post-commit session(s) that echoed the signature)"
-    exit 0
-fi
+    REF_MATCHES=$(rg -l --no-messages -- "$HASH" "$SEARCH_ROOT" 2>/dev/null || true)
+    if [[ -z "$REF_MATCHES" ]]; then
+        echo "no sessions mention $HASH." >&2
+        exit 2
+    fi
 
-# Fallback: no authoring signature. List all hash mentions, split by time.
-REF_MATCHES=$(rg -l --no-messages -- "$HASH" "$SEARCH_ROOT" 2>/dev/null || true)
-if [[ -z "$REF_MATCHES" ]]; then
-    echo "no sessions mention $HASH." >&2
+    echo "no authoring signature found for $HASH — commit may have been made"
+    echo "via tooling that didn't surface output to the transcript. Candidates:"
+    echo
+
+    PRE_COMMIT=()
+    POST_COMMIT=()
+    while IFS= read -r file; do
+        [[ -z "$file" ]] && continue
+        ts=$(session_start_ts "$file")
+        if [[ -n "$COMMIT_TIME" && -n "$ts" && "$ts" > "$COMMIT_TIME" ]]; then
+            POST_COMMIT+=("$file")
+        else
+            PRE_COMMIT+=("$file")
+        fi
+    done <<< "$REF_MATCHES"
+
+    # bash 3.2 (macOS) errors on "${arr[@]}" when empty under `set -u`.
+    [[ ${#PRE_COMMIT[@]}  -gt 0 ]] && for f in "${PRE_COMMIT[@]}";  do print_session "$f" "pre-commit"; done
+    [[ ${#POST_COMMIT[@]} -gt 0 ]] && for f in "${POST_COMMIT[@]}"; do print_session "$f" "post-commit"; done
     exit 2
 fi
 
-echo "no authoring signature found for $HASH — commit may have been made"
-echo "via tooling that didn't surface output to the transcript. Candidates:"
-echo
+# ==========================================================================
+# TEXT MODE
+# ==========================================================================
 
-PRE_COMMIT=()
-POST_COMMIT=()
+# Aggregate a file's *user prompt* text (plain string content or text blocks;
+# tool_result records, also type==user, yield nothing).
+prompts_text() {
+    local file=$1
+    rg --no-messages -- '"type":"user"' "$file" 2>/dev/null \
+        | jq -r '
+            select(.type == "user")
+            | .message.content
+            | if type == "string" then .
+              elif type == "array" then ([ .[] | select(.type? == "text") | .text ] | join("\n"))
+              else "" end
+        ' 2>/dev/null || true
+}
+
+# Snippet of the first hit, prefixed with the record type, whitespace-collapsed.
+match_snippet() {
+    local file=$1 line snip
+    line=$(rg -m1 -FS --no-messages -- "$QUERY" "$file" 2>/dev/null || true)
+    [[ -z "$line" ]] && return
+    snip=$(echo "$line" | jq -r '
+        ((.type // "?")) as $t
+        | (.message.content
+           | if type == "string" then .
+             elif type == "array" then ([ .[] | (.text // .content // (.type? // "")) | tostring ] | join(" "))
+             else tostring end) as $c
+        | "[\($t)] \($c)"
+    ' 2>/dev/null || true)
+    [[ -z "$snip" ]] && snip="$line"
+    echo "$snip" | tr '\n\t' '  ' | tr -s ' ' | cut -c1-160
+}
+
+# Candidate files: any transcript literally containing the query (smart-case).
+# Prompt-only matches are a subset, so this prefilter is safe and fast.
+CAND=$(rg -lFS --no-messages -- "$QUERY" "$SEARCH_ROOT" 2>/dev/null || true)
+
+ROWS=()
 while IFS= read -r file; do
     [[ -z "$file" ]] && continue
-    ts=$(session_start_ts "$file")
-    if [[ -n "$COMMIT_TIME" && -n "$ts" && "$ts" > "$COMMIT_TIME" ]]; then
-        POST_COMMIT+=("$file")
-    else
-        PRE_COMMIT+=("$file")
+    if [[ $PROMPTS_ONLY -eq 1 ]]; then
+        prompts_text "$file" | rg -qFS -- "$QUERY" || continue
     fi
-done <<< "$REF_MATCHES"
+    ts=$(session_start_ts "$file")
+    ROWS+=("${ts:-0000-00-00}"$'\t'"$file")
+done <<< "$CAND"
 
-for f in "${PRE_COMMIT[@]}";  do print_session "$f" "pre-commit"; done
-for f in "${POST_COMMIT[@]}"; do print_session "$f" "post-commit"; done
-exit 2
+what="full transcript"
+[[ $PROMPTS_ONLY -eq 1 ]] && what="user prompts"
+
+if [[ ${#ROWS[@]} -eq 0 ]]; then
+    echo "no sessions match \"$QUERY\" ($what)." >&2
+    exit 2
+fi
+
+echo "${#ROWS[@]} session(s) matching \"$QUERY\" ($what), newest first:"
+echo
+
+# Newest first: timestamps are ISO-8601, lexically sortable; unknowns sort last.
+while IFS=$'\t' read -r _ts file; do
+    [[ -z "$file" ]] && continue
+    print_session "$file" "match" "$(match_snippet "$file")"
+done < <(printf '%s\n' "${ROWS[@]}" | sort -rt $'\t' -k1,1)
+
+exit 0
