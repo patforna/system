@@ -12,6 +12,10 @@
   "editor.inlayHints.enabled": "off",
   "editor.largeFileOptimizations": false,
 
+  // --- Startup ---
+  "workbench.startupEditor": "none",
+  "update.showReleaseNotes": false,
+
   // --- Explorer / UX ---
   "explorer.confirmDelete": false,
   "explorer.confirmDragAndDrop": false,
