@@ -127,6 +127,7 @@ handler_crash_line() {
 }
 
 attn_count=0
+fixed_count=0
 rows=""
 details=""
 
@@ -157,14 +158,11 @@ for f in "$DAGS_DIR"/*.yaml; do
     END { printf "%d %d %d %s\n", total+0, ok+0, failed+0, (latest=="" ? "-" : latest) }
   ')
 
-  marker="OK  "
+  marker="OK   "
   comment=""
   detail_block=""
 
   if [[ "$latest_status" == "Failed" ]]; then
-    marker="ATTN"
-    attn_count=$((attn_count + 1))
-
     rundir=$(latest_failed_dagrun_dir "$dag")
     failed_at=$(rundir_started_utc "$rundir")
     failed_run_id=$(rundir_run_id "$rundir")
@@ -179,8 +177,24 @@ for f in "$DAGS_DIR"/*.yaml; do
       IFS=$'\t' read -r af_outcome af_note af_commit <<< "$af"
     fi
 
+    # FIXED: autofix handled it (fixed code, or judged transient). The latest
+    # run on disk is still Failed but the issue is resolved — don't alarm.
+    # ATTN: latest run failed AND autofix can't or didn't resolve it.
+    case "${af_outcome}" in
+      fixed|transient)
+        marker="FIXED"
+        fixed_count=$((fixed_count + 1))
+        ;;
+      *)
+        marker="ATTN "
+        attn_count=$((attn_count + 1))
+        ;;
+    esac
+
     if [[ -n "$af_outcome" ]]; then
-      comment="failed at ${failed_at}; ${af_outcome}: ${af_note}"
+      # af_note already starts with "<outcome>: ..." per the autofix prompt,
+      # so we pass it through verbatim rather than re-prefixing the outcome.
+      comment="failed at ${failed_at}; ${af_note}"
       detail_block="  ${dag} (failed at ${failed_at}; ${af_outcome})"$'\n'
       detail_block+="    ${af_note}"$'\n'
       if [[ -n "$af_commit" ]]; then
@@ -217,7 +231,7 @@ for f in "$DAGS_DIR"/*.yaml; do
       detail_block="  ${dag} (pending)"$'\n'
       detail_block+="    No history yet — first scheduled run still ahead."$'\n'
     else
-      marker="ATTN"
+      marker="ATTN "
       comment="no runs in ${window} — scheduler may not have fired"
       attn_count=$((attn_count + 1))
       detail_block="  ${dag} (stale)"$'\n'
@@ -240,6 +254,8 @@ done
 
 if (( attn_count > 0 )); then
   subject="[DAGU] Daily digest — ${attn_count} need attention"
+elif (( fixed_count > 0 )); then
+  subject="[DAGU] Daily digest — all ok (${fixed_count} auto-fixed)"
 else
   subject="[DAGU] Daily digest — all ok"
 fi
@@ -254,7 +270,7 @@ if [[ -n "$details" ]]; then
 ${details}"
 fi
 
-body+="Markers: OK / ATTN. Comments and details come from the per-failure autofix session.
+body+="Markers: OK (healthy) / FIXED (autofix handled it, no action needed) / ATTN (needs you).
 
 UI: http://localhost:8080"
 
