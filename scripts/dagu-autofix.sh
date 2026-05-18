@@ -94,9 +94,19 @@ ${LOG_TAIL:-(no log content)}
    - transient: network blip, rate limit, 5xx, anything that should resolve on the next scheduled run.
    - fixable: bug, drift, or config issue you can correct in local code.
    - escalated: requires credentials, secrets, OAuth re-auth, or external account access you cannot resolve yourself.
+
+   Before you may choose 'fixable', run this accountability check:
+   - Count this DAG's prior 'fixed' outcomes in the last 30 days:
+       jq -r --arg d "$DAG_NAME" 'select(.dag==\$d and .outcome=="fixed")' $STATE_FILE | tail -20
+     If there are 2 or more, a fix has repeatedly not held — do NOT attempt
+     another code fix. Classify 'escalated' (a fix that keeps not working is
+     a human's call, not another patch).
+   - Read \$HOME/github/system/private/GOTCHAS.md. If your intended fix
+     repeats a hypothesis already recorded there with "No" under "Did it
+     work?", do NOT try it again — classify 'escalated'.
 3. Act on the classification:
    - transient: do nothing. Next scheduled run will pass.
-   - fixable: fix the code in the relevant repo (usually \$HOME/github/system), commit to main with a clear, brief message that explains the failure and the fix. Push. Do NOT open a PR or GitHub issue — Patric explicitly does not want that noise.
+   - fixable: fix the code in the relevant repo (usually \$HOME/github/system), commit to main with a clear, brief message that explains the failure and the fix. Push. Do NOT open a PR or GitHub issue — Patric explicitly does not want that noise. Then append a row to \$HOME/github/system/private/GOTCHAS.md under the matching problem section (its header explains the one-line format): what happened, what you tried & why (your hypothesis), and "Not proven" under "Did it work?". Create a new section if none fits. Append only — never edit or delete an existing row.
    - escalated: send Patric a focused email with diagnosis and the specific thing you need from him. Use the gws gmail +send command with the recipient \$NOTIFY_EMAIL (value: $NOTIFY_EMAIL), subject "[DAGU AUTOFIX] $DAG_NAME — needs human", and a brief body containing your diagnosis and the ask.
 
 # Recording your outcome (mandatory)
