@@ -100,8 +100,17 @@ def main():
 
     ids = list_ids(f"label:{args.label} newer_than:{args.days}d")
     out = []
+    skipped = []
     for mid in ids:
-        msg = fetch(mid)
+        try:
+            msg = fetch(mid)
+        except (subprocess.CalledProcessError, json.JSONDecodeError) as e:
+            # One message exhausting gws retries must not sink the whole
+            # digest — skip it and carry on. Missing a few beats missing all.
+            print(f"skipping {mid}: fetch failed after retries ({e})",
+                  file=sys.stderr)
+            skipped.append(mid)
+            continue
         headers = {h["name"].lower(): h["value"]
                    for h in msg["payload"].get("headers", [])}
         body = extract_body(msg)
@@ -121,7 +130,8 @@ def main():
     with open(args.output, "w") as f:
         json.dump(out, f, indent=2, ensure_ascii=False)
     print(f"wrote {len(out)} messages to {args.output} "
-          f"({sum(len(x['body']) for x in out):,} body chars)", file=sys.stderr)
+          f"({sum(len(x['body']) for x in out):,} body chars); "
+          f"skipped {len(skipped)} after retries", file=sys.stderr)
 
 
 if __name__ == "__main__":
