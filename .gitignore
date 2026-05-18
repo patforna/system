@@ -6,3 +6,7 @@ dagu/skills/
 dagu/souls/
 dagu/memory/
 dagu/docs/
+
+# Python
+__pycache__/
+*.pyc
