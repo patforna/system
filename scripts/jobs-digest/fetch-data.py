@@ -5,15 +5,26 @@ Output: array of {id, thread_id, from, subject, date, snippet, body} sorted by d
 Body is plaintext (preferred) or HTML stripped to plaintext-ish, truncated at 30k chars.
 """
 
-import argparse, base64, html, json, re, subprocess, sys
+import argparse, base64, html, json, re, subprocess, sys, time
 
 
-def gws(args):
-    out = subprocess.run(
-        ["/opt/homebrew/bin/gws", *args],
-        capture_output=True, text=True, check=True,
-    )
-    return json.loads(out.stdout)
+def gws(args, tries=4):
+    # gws occasionally returns exit 1 (API error, e.g. 429/5xx) or exit 5
+    # (internal) on a single call. Retry with backoff so one transient blip
+    # mid-fetch doesn't abort the whole digest.
+    for attempt in range(tries):
+        try:
+            out = subprocess.run(
+                ["/opt/homebrew/bin/gws", *args],
+                capture_output=True, text=True, check=True,
+            )
+            return json.loads(out.stdout)
+        except (subprocess.CalledProcessError, json.JSONDecodeError) as e:
+            if attempt == tries - 1:
+                raise
+            print(f"gws retry {attempt + 1}/{tries - 1} after: {e}",
+                  file=sys.stderr)
+            time.sleep(2 ** attempt)
 
 
 def list_ids(query):
