@@ -22,6 +22,15 @@ STATE_DIR="${HOME}/.local/state"
 STATE_FILE="${STATE_DIR}/dagu-autofix.jsonl"
 mkdir -p "$STATE_DIR"
 
+# Per-DAG sentinel holding the run-id of an autofix-triggered retry. Used as
+# a loop guard: if that exact run fails again, we escalate instead of
+# fixing-and-retrying a second time.
+RETRY_DIR="${STATE_DIR}/dagu-autofix-retry"
+RETRY_SENTINEL="${RETRY_DIR}/${DAG_NAME}"
+mkdir -p "$RETRY_DIR"
+
+DAGU="${DAGU:-/opt/homebrew/bin/dagu}"
+
 CLAUDE=/Users/patric/.local/bin/claude
 
 LOG_TAIL=""
@@ -31,6 +40,26 @@ fi
 
 TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 TODAY=$(date +%Y-%m-%d)
+
+# Loop guard. If this failed run is itself the run we re-triggered after a
+# previous autofix, the committed fix did not hold. Don't fix-and-retry
+# again (that risks an endless fail→fix→retry loop) — escalate to Patric.
+if [[ -f "$RETRY_SENTINEL" ]]; then
+  sentinel_runid=$(head -1 "$RETRY_SENTINEL" 2>/dev/null || true)
+  sentinel_age=$(( $(date +%s) - $(stat -f %m "$RETRY_SENTINEL" 2>/dev/null || echo 0) ))
+  if [[ "$sentinel_runid" == "$DAG_RUN_ID" ]]; then
+    rm -f "$RETRY_SENTINEL"
+    if [[ -n "$NOTIFY_EMAIL" ]]; then
+      /opt/homebrew/bin/gws gmail +send --to "$NOTIFY_EMAIL" \
+        --subject "[DAGU AUTOFIX] $DAG_NAME — re-run after fix still failing" \
+        --body "Autofix committed a fix for $DAG_NAME and re-triggered it, but the re-run ($DAG_RUN_ID) also failed. The fix did not hold — needs manual investigation. Log: ${LOG_FILE:-(unavailable)}" >/dev/null 2>&1 || true
+    fi
+    echo "{\"ts\":\"$TS\",\"dag\":\"$DAG_NAME\",\"run_id\":\"$DAG_RUN_ID\",\"outcome\":\"escalated\",\"note\":\"escalated: autofix re-run also failed, fix did not hold, needs human\"}" >> "$STATE_FILE"
+    exit 0
+  fi
+  # Sentinel left over from an old, unrelated incident — clear and proceed.
+  if (( sentinel_age > 86400 )); then rm -f "$RETRY_SENTINEL"; fi
+fi
 
 # Bail out cleanly if claude isn't available — log and exit so we don't lose
 # the failure entirely.
@@ -109,6 +138,31 @@ LOG_OUT="/tmp/dagu-autofix-${DAG_NAME}.log"
 # fallback entry so the digest sees something.
 if ! grep -q "\"run_id\":\"$DAG_RUN_ID\"" "$STATE_FILE" 2>/dev/null; then
   echo "{\"ts\":\"$TS\",\"dag\":\"$DAG_NAME\",\"run_id\":\"$DAG_RUN_ID\",\"outcome\":\"unhandled\",\"note\":\"autofix session ended without recording outcome\"}" >> "$STATE_FILE"
+fi
+
+# If autofix actually fixed the failure, re-trigger the DAG so the recovered
+# run produces its output this cycle — otherwise a weekly digest (etc.) stays
+# missed until its next scheduled run despite the fix being committed.
+#
+# Enqueue (not start): the failing run is still active while this handler
+# runs, so a direct start would be dropped by overlap_policy=skip. The
+# enqueued run waits in the queue and fires once the DAG is idle.
+#
+# One retry only. The new run gets a known run-id recorded in the sentinel;
+# if it also fails, the loop guard at the top escalates instead of looping.
+outcome=$(jq -r --arg rid "$DAG_RUN_ID" \
+  'select(.run_id==$rid)|.outcome' "$STATE_FILE" 2>/dev/null | tail -1)
+if [[ "$outcome" == "fixed" ]]; then
+  retry_runid=$(uuidgen | tr 'A-Z' 'a-z')
+  printf '%s\n' "$retry_runid" > "$RETRY_SENTINEL"
+  if "$DAGU" enqueue --trigger-type retry -r "$retry_runid" "$DAG_NAME" \
+       >/dev/null 2>&1; then
+    echo "{\"ts\":\"$TS\",\"dag\":\"$DAG_NAME\",\"run_id\":\"$retry_runid\",\"parent_run_id\":\"$DAG_RUN_ID\",\"outcome\":\"retriggered\",\"note\":\"retriggered: re-ran $DAG_NAME after autofix fix\"}" >> "$STATE_FILE"
+    echo "=== autofix re-triggered $DAG_NAME as $retry_runid ===" | tee -a "$LOG_OUT"
+  else
+    rm -f "$RETRY_SENTINEL"
+    echo "=== autofix re-trigger enqueue FAILED for $DAG_NAME ===" | tee -a "$LOG_OUT"
+  fi
 fi
 
 exit 0

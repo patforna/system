@@ -129,8 +129,10 @@ catchup_window: "24h"
 # -- Lifecycle Handlers --
 # Inherited by all DAGs. handler_on.failure invokes a local Claude Code session
 # via scripts/dagu-autofix.sh, which classifies the failure as transient,
-# fixable, or escalated. Fixable failures get committed to main directly;
-# escalations email NOTIFY_EMAIL. Outcomes are written to
+# fixable, or escalated. Fixable failures get committed to main directly, then
+# the DAG is re-triggered (enqueued) so the recovered run still produces its
+# output this cycle; one retry only — if the re-run also fails it escalates.
+# Escalations email NOTIFY_EMAIL. Outcomes are written to
 # ~/.local/state/dagu-autofix.jsonl so the daily digest can show them.
 handler_on:
   failure:
