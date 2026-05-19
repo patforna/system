@@ -87,7 +87,8 @@ alias gcl='git clone'
 alias gd='git diff'
 alias gdp='git --no-pager diff'
 alias gds='git diff --staged'
-alias gsbs='git sbs'             # wide-window side-by-side review: gsbs main...HEAD
+# gsbs: side-by-side delta for ANY git subcommand — gsbs diff main...HEAD | gsbs show <sha> | gsbs log -p
+gsbs() { git -c delta.side-by-side=true "$@"; }
 alias gpl='git pull --rebase'
 alias gp='git push'
 alias gpf='git push --force-with-lease'
