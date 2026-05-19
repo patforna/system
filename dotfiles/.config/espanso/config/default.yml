@@ -2,3 +2,7 @@
 # Clipboard backend is the most reliable inside terminal emulators
 # (Ghostty) and multiplexers (tmux), where key injection can drop chars.
 backend: Clipboard
+
+# Disable the espanso search bar so Option+Space stays free for
+# Ghostty's quick-terminal global hotkey (ghostty/config: global:alt+space).
+search_shortcut: OFF
