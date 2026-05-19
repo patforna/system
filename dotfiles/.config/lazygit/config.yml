@@ -1,3 +1,4 @@
 git:
   pagers:
     - pager: delta --paging=never
+    - pager: delta --paging=never --side-by-side
