@@ -71,6 +71,7 @@ alias gcl='git clone'
 alias gd='git diff'
 alias gdp='git --no-pager diff'
 alias gds='git diff --staged'
+alias gsbs='git sbs'             # wide-window side-by-side review: gsbs main...HEAD
 alias gpl='git pull --rebase'
 alias gp='git push'
 alias gpf='git push --force-with-lease'
