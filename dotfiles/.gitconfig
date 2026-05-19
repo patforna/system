@@ -35,10 +35,6 @@
 [interactive]
 	diffFilter = delta --color-only
 
-# --- Aliases ---
-[alias]
-	sbs = -c delta.side-by-side=true diff   # wide-window side-by-side review: git sbs main...HEAD
-
 # --- Rerere keeps conflict resolutions for reuse ---
 [rerere]
 	enabled = true

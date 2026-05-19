@@ -32,9 +32,6 @@
 [interactive]
 	diffFilter = delta --color-only
 
-[alias]
-	sbs = -c delta.side-by-side=true diff
-
 [rerere]
 	enabled = true
 
