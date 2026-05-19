@@ -24,6 +24,7 @@
 
   // --- Files ---
   "files.autoSave": "off",
+  "files.trimTrailingWhitespace": true,
   "files.exclude": {
     "**/__pycache__": true,
     "**/.DS_Store": true,
@@ -73,7 +74,11 @@
   },
   "[markdown]": {
     "editor.wordWrap": "bounded",
-    "editor.wordWrapColumn": 80
+    "editor.wordWrapColumn": 120
+  },
+  "[plaintext]": {
+    "editor.wordWrap": "bounded",
+    "editor.wordWrapColumn": 120
   },
   "[python]": {
     "editor.formatOnSave": true,
