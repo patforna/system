@@ -1,4 +1,4 @@
-schedule: "0 18 * * 0"
+schedule: "0 3 * * 6"
 
 steps:
   - name: jobs-digest
