@@ -1,0 +1,10 @@
+matches:
+  # Sanity check — type ":esptest" anywhere to confirm espanso is live.
+  - trigger: ":esptest"
+    replace: "espanso works"
+
+  - trigger: ":cp"
+    replace: "commit and push"
+
+  - trigger: ":shrg"
+    replace: '¯\_(ツ)_/¯'

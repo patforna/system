@@ -1,0 +1,4 @@
+# espanso default config
+# Clipboard backend is the most reliable inside terminal emulators
+# (Ghostty) and multiplexers (tmux), where key injection can drop chars.
+backend: Clipboard
