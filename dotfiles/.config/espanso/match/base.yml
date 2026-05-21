@@ -8,3 +8,6 @@ matches:
   - trigger: ":wu"
     replace: '/wrap-up'
 
+  - trigger: ":clip"
+    replace: 'Output your response and also copy it into my clipboard'
+
