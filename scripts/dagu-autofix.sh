@@ -9,10 +9,7 @@ set -uo pipefail
 # Outcomes are appended to $STATE_FILE (one JSON line each) so the daily
 # digest can join failures against autofix actions.
 
-CONF="${HOME}/github/system/private/droplet-watchdog.conf"
-[[ -f "$CONF" ]] && source "$CONF"
-
-NOTIFY_EMAIL="${NOTIFY_EMAIL:-}"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/dagu-common.sh"
 
 DAG_NAME="${DAG_NAME:-unknown}"
 DAG_RUN_ID="${DAG_RUN_ID:-unknown}"
@@ -30,8 +27,6 @@ RETRY_SENTINEL="${RETRY_DIR}/${DAG_NAME}"
 mkdir -p "$RETRY_DIR"
 
 DAGU="${DAGU:-/opt/homebrew/bin/dagu}"
-
-CLAUDE=/Users/patric/.local/bin/claude
 
 LOG_TAIL=""
 if [[ -n "$LOG_FILE" && -r "$LOG_FILE" ]]; then
@@ -64,7 +59,7 @@ fi
 # Bail out cleanly if claude isn't available — log and exit so we don't lose
 # the failure entirely.
 if [[ ! -x "$CLAUDE" ]]; then
-  echo "{\"ts\":\"$TS\",\"dag\":\"$DAG_NAME\",\"run_id\":\"$DAG_RUN_ID\",\"outcome\":\"unhandled\",\"note\":\"claude binary not found at $CLAUDE\"}" >> "$STATE_FILE"
+  record_fallback "$STATE_FILE" "$DAG_NAME" "$DAG_RUN_ID" "$TS" unhandled "claude binary not found at $CLAUDE"
   exit 0
 fi
 
@@ -136,19 +131,14 @@ LOG_OUT="/tmp/dagu-autofix-${DAG_NAME}.log"
 
 {
   echo "=== dagu-autofix $TS — $DAG_NAME ($DAG_RUN_ID) ==="
-  "$CLAUDE" -p \
-    --permission-mode bypassPermissions \
-    --model claude-opus-4-7 \
-    "$PROMPT" 2>&1
+  run_claude "$PROMPT" 2>&1
   rc=$?
   echo "=== claude exit: $rc ==="
 } | tee "$LOG_OUT"
 
 # If Claude exited non-zero AND no state line was written for this run, log a
 # fallback entry so the digest sees something.
-if ! grep -q "\"run_id\":\"$DAG_RUN_ID\"" "$STATE_FILE" 2>/dev/null; then
-  echo "{\"ts\":\"$TS\",\"dag\":\"$DAG_NAME\",\"run_id\":\"$DAG_RUN_ID\",\"outcome\":\"unhandled\",\"note\":\"autofix session ended without recording outcome\"}" >> "$STATE_FILE"
-fi
+record_fallback "$STATE_FILE" "$DAG_NAME" "$DAG_RUN_ID" "$TS" unhandled "autofix session ended without recording outcome"
 
 # If autofix actually fixed the failure, re-trigger the DAG so the recovered
 # run produces its output this cycle — otherwise a weekly digest (etc.) stays

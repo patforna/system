@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fetch jobs-labelled messages from Gmail (last N days) into a JSON file.
+"""Fetch messages with a given Gmail label (last N days) into a JSON file.
 
 Output: array of {id, thread_id, from, subject, date, snippet, body} sorted by date asc.
 Body is plaintext (preferred) or HTML stripped to plaintext-ish, truncated at 30k chars.
@@ -8,11 +8,12 @@ Body is plaintext (preferred) or HTML stripped to plaintext-ish, truncated at 30
 import argparse, base64, html, json, re, subprocess, sys, time
 
 
-def gws(args, tries=4):
+def gws(args, retries=3, backoff=2.0):
     # gws occasionally returns exit 1 (API error, e.g. 429/5xx) or exit 5
-    # (internal) on a single call. Retry with backoff so one transient blip
-    # mid-fetch doesn't abort the whole digest.
-    for attempt in range(tries):
+    # (internal) on a single call. One run fans out ~100 sequential gws calls,
+    # so retry with backoff — one transient blip mid-fetch shouldn't abort the
+    # whole digest.
+    for attempt in range(retries + 1):
         try:
             out = subprocess.run(
                 ["/opt/homebrew/bin/gws", *args],
@@ -20,11 +21,11 @@ def gws(args, tries=4):
             )
             return json.loads(out.stdout)
         except (subprocess.CalledProcessError, json.JSONDecodeError) as e:
-            if attempt == tries - 1:
+            if attempt == retries:
                 raise
-            print(f"gws retry {attempt + 1}/{tries - 1} after: {e}",
+            print(f"gws failed ({e}); retry {attempt + 1}/{retries}",
                   file=sys.stderr)
-            time.sleep(2 ** attempt)
+            time.sleep(backoff * (2 ** attempt))
 
 
 def list_ids(query):
@@ -94,7 +95,7 @@ def extract_body(msg):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--days", type=int, default=7)
-    ap.add_argument("--label", default="jobs")
+    ap.add_argument("--label", required=True)
     ap.add_argument("--output", required=True)
     args = ap.parse_args()
 

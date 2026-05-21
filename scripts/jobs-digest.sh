@@ -11,11 +11,8 @@ set -uo pipefail
 # PATH surprises in the Bash tool's shell (e.g. zsh `alias cat='bat'` silently
 # emptying --body).
 
-CONF="${HOME}/github/system/private/droplet-watchdog.conf"
-[[ -f "$CONF" ]] && source "$CONF"
-
-NOTIFY_EMAIL="${NOTIFY_EMAIL:-}"
-[[ -z "$NOTIFY_EMAIL" ]] && { echo "NOTIFY_EMAIL not set" >&2; exit 1; }
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/dagu-common.sh"
+require_notify_email
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 DATA_FILE="/tmp/jobs-digest-data.json"
@@ -23,12 +20,8 @@ HTML_FILE="/tmp/jobs-digest.html"
 SUBJECT_FILE="/tmp/jobs-digest.subject"
 DATE=$(date '+%Y-%m-%d')
 
-CLAUDE=/Users/patric/.local/bin/claude
-PYTHON3=/usr/bin/python3
-GWS=/opt/homebrew/bin/gws
-
 # 1. Fetch 7 days of jobs-labelled mail
-"$PYTHON3" "$SCRIPT_DIR/jobs-digest/fetch-data.py" \
+"$PYTHON3" "$SCRIPT_DIR/lib/fetch-gmail-label.py" \
     --days 7 --label jobs --output "$DATA_FILE" || {
   echo "fetch failed" >&2; exit 1;
 }
@@ -43,10 +36,7 @@ prompt=$(sed -e "s|{DATA_FILE}|$DATA_FILE|g" \
              -e "s|{DATE}|$DATE|g" "$PROMPT_FILE")
 
 echo "=== Rendering jobs digest ==="
-"$CLAUDE" -p \
-    --permission-mode bypassPermissions \
-    --model claude-opus-4-7 \
-    "$prompt" 2>&1 | tee /tmp/jobs-digest.log
+run_claude "$prompt" 2>&1 | tee /tmp/jobs-digest.log
 
 if [[ ! -s "$HTML_FILE" ]]; then
   echo "jobs digest: $HTML_FILE missing or empty — not sending" >&2
