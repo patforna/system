@@ -3,3 +3,6 @@ schedule: "0 3 * * *"
 steps:
   - name: msgvault-sync
     command: $HOME/.local/bin/msgvault sync
+    retry_policy:
+      limit: 2
+      interval_sec: 300

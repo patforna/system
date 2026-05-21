@@ -3,3 +3,6 @@ schedule: "0 3 * * 2-6"
 steps:
   - name: tad-pipeline
     command: bash -c 'eval "$(/opt/homebrew/bin/brew shellenv)" && cd "${HOME}/github/tad/backend" && uv run tad pipeline run -v'
+    retry_policy:
+      limit: 2
+      interval_sec: 300
