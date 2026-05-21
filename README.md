@@ -110,6 +110,7 @@ Times are local (Europe/Zurich).
 |----------------------------------------------------------|---------------------------------|
 | `[DAGU] Daily digest — <status>`                         | 04:00 daily                     |
 | `[DAGU AUTOFIX] <dag> — needs human`                     | On escalation only              |
+| `[TAD SWEEP] <range> — needs a human`                    | Sweep escalation only           |
 | `Dev droplet running for Xd Yh`                          | Droplet up >24h                 |
 | `[Jobs digest]` / `[Tech-news digest]`                   | Saturday 03:00                  |
 

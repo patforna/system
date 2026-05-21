@@ -1,0 +1,10 @@
+schedule: "0 3 * * *"
+
+# Bound the run defensively — a healthy sweep is minutes; this caps a hung
+# claude session. Genuine failures (timeout/crash) fall through to the
+# inherited handler_on.failure (dagu-autofix.sh) like every other DAG.
+timeout_sec: 5400
+
+steps:
+  - name: tad-daily-code-review
+    command: bash -c 'eval "$(/opt/homebrew/bin/brew shellenv)" && "${HOME}/github/system/scripts/tad-daily-code-review.sh"'
