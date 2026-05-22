@@ -480,8 +480,16 @@ mac_settings="${HOME}/.claude/settings.json"
 remote_settings=$(sed -n '/^cat.*<<.*SETTINGS/,/^SETTINGS$/p' "${REMOTE}/bootstrap.sh" | sed '1d;$d')
 
 if [[ -f "$mac_settings" && -n "$remote_settings" ]] && command -v jq &>/dev/null; then
-  # Strip keys that are intentionally remote-only before comparing
-  jq_strip='del(.skipAutoPermissionPrompt)'
+  # Keys that legitimately differ between Mac and the droplet are deleted from
+  # BOTH sides before comparing, so a Mac-only UI tweak doesn't read as drift:
+  #   skipAutoPermissionPrompt — remote-only (droplet runs Claude unattended)
+  #   tui                      — Mac-only (fullscreen TUI; a headless droplet
+  #                              has no use for it)
+  # Add new Mac-only preference keys here rather than mirroring them into the
+  # bootstrap heredoc. The heredoc is the droplet's required config, not a
+  # mirror of every local preference — see private/GOTCHAS.md "drift-check
+  # Claude settings & copilot-chat keep re-drifting".
+  jq_strip='del(.skipAutoPermissionPrompt, .tui)'
   mac_normalized=$(jq -S "$jq_strip" "$mac_settings" 2>/dev/null || true)
   remote_normalized=$(echo "$remote_settings" | jq -S "$jq_strip" 2>/dev/null || true)
   if [[ -n "$mac_normalized" && -n "$remote_normalized" ]]; then

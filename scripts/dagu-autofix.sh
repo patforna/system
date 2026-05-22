@@ -91,11 +91,16 @@ ${LOG_TAIL:-(no log content)}
    - escalated: requires credentials, secrets, OAuth re-auth, or external account access you cannot resolve yourself.
 
    Before you may choose 'fixable', run this accountability check:
-   - Count this DAG's prior 'fixed' outcomes in the last 30 days:
-       jq -r --arg d "$DAG_NAME" 'select(.dag==\$d and .outcome=="fixed")' $STATE_FILE | tail -20
-     If there are 2 or more, a fix has repeatedly not held — do NOT attempt
-     another code fix. Classify 'escalated' (a fix that keeps not working is
-     a human's call, not another patch).
+   - The signal that matters is whether THIS SAME failure has been fixed
+     before and come back — not how many unrelated things this DAG has fixed.
+     A broad check like drift-check legitimately catches different items over
+     time; each is independent. Read this DAG's prior 'fixed' notes:
+       jq -r --arg d "$DAG_NAME" 'select(.dag==\$d and .outcome=="fixed")|.note' $STATE_FILE | tail -20
+     Compare them to the failure in front of you. If the SAME root cause (same
+     drift item, same error) has been fixed 2+ times and is failing again, the
+     fix is not holding — do NOT patch it again. Classify 'escalated' (a fix
+     that keeps not working is a human's call, not another patch). Unrelated
+     prior fixes do not count toward this.
    - Read \$HOME/github/system/private/GOTCHAS.md. If your intended fix
      repeats a hypothesis already recorded there with "No" under "Did it
      work?", do NOT try it again — classify 'escalated'.
