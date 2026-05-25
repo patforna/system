@@ -73,12 +73,10 @@
     "editor.defaultFormatter": "esbenp.prettier-vscode"
   },
   "[markdown]": {
-    "editor.wordWrap": "bounded",
-    "editor.wordWrapColumn": 120
+    "editor.wordWrap": "on"
   },
   "[plaintext]": {
-    "editor.wordWrap": "bounded",
-    "editor.wordWrapColumn": 120
+    "editor.wordWrap": "on"
   },
   "[python]": {
     "editor.formatOnSave": true,
