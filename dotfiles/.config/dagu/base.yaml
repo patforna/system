@@ -38,6 +38,28 @@ max_output_size: 1048576  # 1MB (bytes)
 # Duration string: e.g. "6h", "24h", "2d12h". Empty = no catchup (missed runs discarded).
 catchup_window: "24h"
 
+# -- Environment (live) --
+# launchd starts the dagu daemon with a minimal PATH that lacks /opt/homebrew/bin
+# and ~/.local/bin, so any tool invoked by bare name fails with "command not
+# found". This bit Claude Code's SessionEnd hook (`node ...`) on every headless
+# `claude` run — in the digests AND in the failure handler's own claude session.
+# Setting PATH here propagates to every step, the failure handler, and their
+# child processes (claude -> node). See private/GOTCHAS.md.
+env:
+  - PATH: /opt/homebrew/bin:${HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+
+# -- Step defaults (live) --
+# Retry every step on transient failure before the DAG is marked failed (which
+# triggers the autofix handler and a daily-digest ATTN nag). The digests render
+# via the Claude API and periodically hit a transient socket close mid-render;
+# one retry rides that out instead of paging a human for a blip that clears on
+# its own. Steps that set their own retry_policy (msgvault-sync, tad-pipeline)
+# override these values.
+defaults:
+  retry_policy:
+    limit: 2
+    interval_sec: 300
+
 # -- Shell --
 # Shell interpreter for command steps.
 # Default resolution order: $DAGU_DEFAULT_SHELL -> $SHELL -> sh
