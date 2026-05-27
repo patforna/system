@@ -28,7 +28,8 @@ The `dev-up` and `dev-down` scripts for managing the droplet lifecycle live in `
 | nodesource apt | Node.js 22 (Claude Code plugins) |
 | GitHub apt repo | gh |
 | GitHub releases | fzf, delta, lazygit, eza |
-| curl installers | just, starship, atuin, zoxide, uv |
+| curl installers | just, starship, atuin, zoxide, uv, bun |
+| npm global | Codex CLI (`@openai/codex`, required by the `codex` plugin) |
 | native installer | Claude Code |
 
 ## Playbook

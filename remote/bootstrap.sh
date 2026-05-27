@@ -148,6 +148,10 @@ if ! command -v bun &>/dev/null; then
 else
   echo "  SKIP  bun"
 fi
+# bun installs to ~/.bun/bin and only patches the interactive shell rc; symlink into
+# ~/.local/bin (on PATH for non-interactive shells too) so dagu / just / auto-task find it.
+mkdir -p "$HOME/.local/bin"
+[[ -x "$HOME/.bun/bin/bun" ]] && ln -sf "$HOME/.bun/bin/bun" "$HOME/.local/bin/bun"
 echo ""
 
 # --- Claude Code ---
@@ -157,6 +161,20 @@ if ! command -v claude &>/dev/null; then
   echo "  OK    claude"
 else
   echo "  SKIP  claude"
+fi
+echo ""
+
+# --- Codex CLI (the codex@openai-codex plugin wraps the global `codex` binary) ---
+echo "--- Codex CLI ---"
+mkdir -p "$HOME/.local/bin"
+# user-writable npm prefix → `npm -g` needs no sudo and lands in ~/.local/bin (on PATH,
+# incl. non-interactive shells). A fresh box's default prefix is /usr, which would EACCES.
+[[ "$(npm config get prefix)" == "$HOME/.local" ]] || npm config set prefix "$HOME/.local"
+if ! command -v codex &>/dev/null; then
+  npm install -g @openai/codex
+  echo "  OK    codex $(codex --version 2>/dev/null || echo installed)"
+else
+  echo "  SKIP  codex $(codex --version 2>/dev/null)"
 fi
 echo ""
 
