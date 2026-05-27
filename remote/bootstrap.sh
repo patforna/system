@@ -321,4 +321,16 @@ SETTINGS
 echo "  OK    $HOME/.claude/settings.json (generated)"
 echo ""
 
+# --- Remote config parity (informational) ---
+# Surface any divergence between remote/ and the Mac dotfiles at provision time.
+# Non-fatal: the fix always lives on the Mac, but flag it while standing up the box.
+echo "--- Remote config parity ---"
+if drift_out=$("$REPO_DIR/scripts/drift-check" --remote 2>&1); then
+  echo "  OK    remote/ in sync with Mac dotfiles"
+else
+  echo "  WARN  remote/ differs from Mac dotfiles:"
+  echo "$drift_out" | sed -n 's/^  - /        - /p'
+fi
+echo ""
+
 echo "=== Done ==="

@@ -118,8 +118,9 @@ Connect to `dev` in the Remote Explorer — it picks up your SSH config.
 
 The Mac and Linux configs are maintained separately (`dotfiles/` vs `remote/`) because some things can't be shared directly (Homebrew paths, `pbcopy`, osxkeychain, etc.). When you update one side, the other may need a corresponding change.
 
-Remote config drift is checked automatically by `drift-check` (daily via Dagu). It compares zshrc, tmux, gitconfig, shared dotfiles, Claude settings, Brewfile vs bootstrap tools, and SSH config. Run manually:
+Remote config parity is checked by `drift-check --remote` — it compares zshrc, tmux, gitconfig, shared dotfiles, the Claude-settings heredoc, Brewfile vs bootstrap tools, and SSH config. This runs as a gate when the box is provisioned (`dev-up` before creating the droplet, and `bootstrap.sh` at the end), since it only matters then — it is **not** on the daily cron. Run manually:
 
 ```bash
-drift-check
+drift-check --remote   # parity only
+drift-check            # both surfaces (local + remote)
 ```

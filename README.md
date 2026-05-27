@@ -82,7 +82,7 @@ Usage data is fetched from Anthropic's OAuth endpoint using Claude Code's own cr
 |---------|---------|
 | `find-session <hash\|text>` | Locate a Claude Code session by commit hash or by text — mode auto-detected (hex that resolves to a commit ⇒ hash mode, else text). Hash mode matches the `[branch hash]` signature `git commit` prints, falling back to timestamp-sorted hash mentions when it wasn't captured (e.g. subagent/headless commits). Text mode lists sessions whose transcript matches, newest first; `--prompts-only` restricts to your messages. Pass `--repo` to narrow to the current repo's sessions. |
 | `claude-replay`       | Extract a Claude Code session transcript into readable markdown — full subagent prompts/responses, main-thread text, and Bash calls, no TUI truncation. UUIDs resolve globally, so `claude-replay <uuid>` works from any directory; with no arg, falls back to the latest session in the cwd's project. Use `--list` to browse, `--commit <hash>` to locate a session via `find-session`. |
-| `drift-check`         | Detect untracked dotfiles, Brewfile drift, and Mac ↔ Linux config divergence. Runs daily via Dagu. Exits 1 on drift, which triggers an autofix attempt via the dagu failure handler. |
+| `drift-check`         | Detect untracked system state and Mac ↔ Linux config divergence. Two surfaces: `--local` (Brewfile, casks, apps, symlinks…) runs daily via Dagu as an informational nudge; `--remote` (Mac dotfiles vs `remote/`) runs as a gate in `dev-up`/`bootstrap.sh`. No mode = both. `--notify` emails the list and exits 0 (no autofix); otherwise exits 1 on drift. |
 | `dev-up` / `dev-down` | Bring the remote dev droplet up/down and sync local SSH config. |
 
 ## Dagu workflows
@@ -92,7 +92,7 @@ Local [Dagu](https://dagu.cloud/) instance runs the schedules in [`dagu/`](dagu/
 | DAG                     | Cadence            | What it does                                                                                          |
 |-------------------------|--------------------|-------------------------------------------------------------------------------------------------------|
 | `msgvault-sync`         | Daily at 03:00     | `msgvault sync` of the configured Gmail account                                                       |
-| `drift-check`           | Daily at 03:00     | Runs [`scripts/drift-check`](scripts/drift-check) `--notify` to flag system-repo drift                |
+| `drift-check`           | Daily at 03:00     | [`scripts/drift-check`](scripts/drift-check) `--local --notify` — emails local drift, exits 0 (no autofix). Remote parity is gated in `dev-up`, not here. |
 | `droplet-watchdog`      | Every 4 hours      | Emails + macOS-notifies if the `dev` DigitalOcean droplet has been up >24h                            |
 | `workflow-digest`       | Daily at 04:00     | [`dagu-digest.sh`](scripts/dagu-digest.sh) — summarises 24h (7d for weekly DAGs) status, mails it     |
 | `jobs-digest`           | Saturday at 03:00  | Vets last 7d of `label:jobs` mail via `claude -p` against target-role criteria; HTML email            |

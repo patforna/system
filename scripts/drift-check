@@ -4,23 +4,70 @@ set -uo pipefail  # no -e: collect all drift items rather than stopping on first
 # Drift check: detect anything installed/changed on the system that isn't
 # tracked in the Brewfile, dotfiles, or README.
 #
-# Exit codes: 0 = clean, 1 = drift detected.
-# --notify is accepted for backwards compatibility but currently has no extra
-# effect — drift always exits 1, and the dagu autofix handler picks it up
-# from there (see scripts/dagu-autofix.sh).
+# Two surfaces with opposite economics, selectable by mode:
+#   local  — untracked Mac state (Brewfile, casks, apps, extensions, symlinks,
+#            file associations, config dirs, script syntax). Useful continuously;
+#            this is the daily cron's job (see dagu/drift-check.yaml).
+#   remote — Mac dotfiles vs the remote/ Linux equivalents (zshrc, tmux, git,
+#            shared dotfiles, the droplet Claude-settings heredoc, Brewfile vs
+#            bootstrap, SSH). Only matters when the devbox is provisioned, so it
+#            runs as a gate inside dev-up and remote/bootstrap.sh — NOT daily.
+#
+# Modes:
+#   drift-check            check both surfaces (manual full sweep)
+#   drift-check --local    local Mac surface only
+#   drift-check --remote   remote-parity surface only (the dev-up/bootstrap gate)
+#   --notify               drift is informational: email the list (if drift) and
+#                          exit 0 so the dagu failure handler / autofix does NOT
+#                          fire. Untracked state is a reconciliation decision for
+#                          a human, not a 3am auto-commit. Used with --local.
+#
+# Exit codes: 0 = clean (or --notify, always), 1 = drift detected, 2 = bad args.
 
 export PATH="${HOME}/.local/bin:${PATH}"
 
-# --notify is accepted for backwards compatibility (used by dagu/drift-check.yaml)
-# but no longer changes behaviour — drift always exits 1, the dagu autofix
-# handler picks it up.
-[[ "${1:-}" == "--notify" ]] || true
+MODE="all"    # all | local | remote
+NOTIFY=0
+
+usage() {
+  cat <<'EOF'
+drift-check — detect untracked system state and Mac↔Linux config divergence.
+
+Usage: drift-check [--local | --remote | --all] [--notify]
+
+  (no mode)   check both surfaces (manual full sweep)
+  --local     local Mac surface only (Brewfile, casks, apps, symlinks, …)
+  --remote    remote-parity surface only (dev-up / bootstrap gate)
+  --all       both surfaces (same as no mode)
+  --notify    informational: email the drift list and exit 0 (no autofix).
+              Used by the daily cron as `drift-check --local --notify`.
+
+Exit: 0 = clean (or --notify), 1 = drift detected, 2 = bad args.
+EOF
+}
+
+for arg in "$@"; do
+  case "$arg" in
+    --local)   MODE="local" ;;
+    --remote)  MODE="remote" ;;
+    --all)     MODE="all" ;;
+    --notify)  NOTIFY=1 ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "drift-check: unknown argument '$arg' (try --help)" >&2; exit 2 ;;
+  esac
+done
 
 BREWFILE="${HOME}/github/system/Brewfile"
 DOTFILES="${HOME}/github/system/dotfiles"
 PRIVATE="${HOME}/github/system/private"
 REMOTE="${HOME}/github/system/remote"
 DRIFT=()
+
+# Notification config (only used by --notify). Mirrors dagu-digest.sh.
+NOTIFY_CONF="${HOME}/github/system/private/droplet-watchdog.conf"
+[[ -f "$NOTIFY_CONF" ]] && source "$NOTIFY_CONF"
+NOTIFY_EMAIL="${NOTIFY_EMAIL:-}"
+GWS="${GWS:-/opt/homebrew/bin/gws}"
 
 # --- Helpers ---
 
@@ -37,167 +84,321 @@ drift() {
 
 ok() { echo "  OK     $1"; }
 
-# --- Brew formulae ---
-section "Brew formulae"
-brewfile_formulae=$(grep '^brew ' "$BREWFILE" | sed 's/^brew "\(.*\)"/\1/' | sed 's|.*/||' | sort)
-installed_leaves=$(brew leaves 2>/dev/null | sed 's|.*/||' | sort)
-installed_all_formulae=$(brew list --formula 2>/dev/null | sort)
-formulae_drift_count=${#DRIFT[@]}
+# Informational email for --notify. Sent only when drift was found and an
+# address + gws are available; never fatal. Deliberately low-key: this is a
+# nudge, not an alert — no ATTN, no autofix.
+send_drift_email() {
+  local count="$1"; shift
+  [[ -z "$NOTIFY_EMAIL" || ! -x "$GWS" ]] && return
+  local body="drift-check found ${count} untracked item(s) on $(hostname -s 2>/dev/null || hostname):
 
-# New top-level packages not in Brewfile
-while IFS= read -r pkg; do
-  [[ -z "$pkg" ]] && continue
-  drift "formula '$pkg' installed but not in Brewfile"
-done < <(comm -23 <(echo "$installed_leaves") <(echo "$brewfile_formulae"))
+"
+  local d
+  for d in "$@"; do body+="  - ${d}"$'\n'; done
+  body+="
+Informational only — no action forced. These are reconciliation decisions
+(track / drop / leave as-is). When you get to it: add to the Brewfile or
+manual-apps.conf, then re-run \`drift-check\` to confirm clean.
+"
+  "$GWS" gmail +send --to "$NOTIFY_EMAIL" \
+    --subject "[DRIFT] ${count} untracked item(s)" \
+    --body "$body" >/dev/null 2>&1 || true
+}
 
-# Brewfile entries not installed at all (check against all installed, not just leaves,
-# because a Brewfile entry like ripgrep may also be a dependency of something else)
-while IFS= read -r pkg; do
-  [[ -z "$pkg" ]] && continue
-  drift "formula '$pkg' in Brewfile but not installed"
-done < <(comm -23 <(echo "$brewfile_formulae") <(echo "$installed_all_formulae"))
+# =============================================================================
+# Local Mac surface
+# =============================================================================
+run_local_checks() {
+  # --- Brew formulae ---
+  section "Brew formulae"
+  local brewfile_formulae installed_leaves installed_all_formulae formulae_drift_count pkg
+  brewfile_formulae=$(grep '^brew ' "$BREWFILE" | sed 's/^brew "\(.*\)"/\1/' | sed 's|.*/||' | sort)
+  installed_leaves=$(brew leaves 2>/dev/null | sed 's|.*/||' | sort)
+  installed_all_formulae=$(brew list --formula 2>/dev/null | sort)
+  formulae_drift_count=${#DRIFT[@]}
 
-if [[ ${#DRIFT[@]} -eq $formulae_drift_count ]]; then
-  ok "formulae match Brewfile"
-fi
+  # New top-level packages not in Brewfile
+  while IFS= read -r pkg; do
+    [[ -z "$pkg" ]] && continue
+    drift "formula '$pkg' installed but not in Brewfile"
+  done < <(comm -23 <(echo "$installed_leaves") <(echo "$brewfile_formulae"))
 
-# --- Brew casks ---
-section "Brew casks"
-brewfile_casks=$(grep '^cask ' "$BREWFILE" | sed 's/^cask "\(.*\)"/\1/' | sort)
-installed_casks=$(brew list --cask 2>/dev/null | sort)
-cask_drift_count=${#DRIFT[@]}
+  # Brewfile entries not installed at all (check against all installed, not just leaves,
+  # because a Brewfile entry like ripgrep may also be a dependency of something else)
+  while IFS= read -r pkg; do
+    [[ -z "$pkg" ]] && continue
+    drift "formula '$pkg' in Brewfile but not installed"
+  done < <(comm -23 <(echo "$brewfile_formulae") <(echo "$installed_all_formulae"))
 
-while IFS= read -r pkg; do
-  [[ -z "$pkg" ]] && continue
-  drift "cask '$pkg' installed but not in Brewfile"
-done < <(comm -23 <(echo "$installed_casks") <(echo "$brewfile_casks"))
+  if [[ ${#DRIFT[@]} -eq $formulae_drift_count ]]; then
+    ok "formulae match Brewfile"
+  fi
 
-while IFS= read -r pkg; do
-  [[ -z "$pkg" ]] && continue
-  drift "cask '$pkg' in Brewfile but not installed"
-done < <(comm -13 <(echo "$installed_casks") <(echo "$brewfile_casks"))
+  # --- Brew casks ---
+  section "Brew casks"
+  local brewfile_casks installed_casks cask_drift_count
+  brewfile_casks=$(grep '^cask ' "$BREWFILE" | sed 's/^cask "\(.*\)"/\1/' | sort)
+  installed_casks=$(brew list --cask 2>/dev/null | sort)
+  cask_drift_count=${#DRIFT[@]}
 
-if [[ ${#DRIFT[@]} -eq $cask_drift_count ]]; then
-  ok "casks match Brewfile"
-fi
+  while IFS= read -r pkg; do
+    [[ -z "$pkg" ]] && continue
+    drift "cask '$pkg' installed but not in Brewfile"
+  done < <(comm -23 <(echo "$installed_casks") <(echo "$brewfile_casks"))
 
-# --- /Applications ---
-section "Applications"
+  while IFS= read -r pkg; do
+    [[ -z "$pkg" ]] && continue
+    drift "cask '$pkg' in Brewfile but not installed"
+  done < <(comm -13 <(echo "$installed_casks") <(echo "$brewfile_casks"))
 
-# Manual apps loaded from external file (one app per line, # comments ignored)
-MANUAL_APPS_FILE="${HOME}/github/system/scripts/manual-apps.conf"
-all_known=()
-while IFS= read -r line; do
-  [[ -z "$line" || "$line" == \#* ]] && continue
-  all_known+=("$line")
-done < "$MANUAL_APPS_FILE"
+  if [[ ${#DRIFT[@]} -eq $cask_drift_count ]]; then
+    ok "casks match Brewfile"
+  fi
 
-# Add apps installed by brew casks (detected from Caskroom)
-while IFS= read -r app; do
-  [[ -z "$app" ]] && continue
-  all_known+=("$app")
-done < <(find "$(brew --prefix)/Caskroom" -name '*.app' -maxdepth 3 -exec basename {} \; 2>/dev/null)
+  # --- /Applications ---
+  section "Applications"
 
-# Add apps installed via Mac App Store (tracked in Brewfile via mas)
-if command -v mas &>/dev/null; then
+  # Manual apps loaded from external file (one app per line, # comments ignored)
+  local MANUAL_APPS_FILE all_known line app found known
+  MANUAL_APPS_FILE="${HOME}/github/system/scripts/manual-apps.conf"
+  all_known=()
+  while IFS= read -r line; do
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    all_known+=("$line")
+  done < "$MANUAL_APPS_FILE"
+
+  # Add apps installed by brew casks (detected from Caskroom)
   while IFS= read -r app; do
     [[ -z "$app" ]] && continue
-    all_known+=("${app}.app")
-  done < <(mas list 2>/dev/null | sed 's/^ *[0-9]*  *//; s/  *(.*$//')
-fi
+    all_known+=("$app")
+  done < <(find "$(brew --prefix)/Caskroom" -name '*.app' -maxdepth 3 -exec basename {} \; 2>/dev/null)
 
-while IFS= read -r app; do
-  [[ -z "$app" ]] && continue
-  found=false
-  for known in "${all_known[@]}"; do
-    if [[ "$app" == "$known" ]]; then
-      found=true
-      break
+  # Add apps installed via Mac App Store (tracked in Brewfile via mas)
+  if command -v mas &>/dev/null; then
+    while IFS= read -r app; do
+      [[ -z "$app" ]] && continue
+      all_known+=("${app}.app")
+    done < <(mas list 2>/dev/null | sed 's/^ *[0-9]*  *//; s/  *(.*$//')
+  fi
+
+  while IFS= read -r app; do
+    [[ -z "$app" ]] && continue
+    found=false
+    for known in "${all_known[@]}"; do
+      if [[ "$app" == "$known" ]]; then
+        found=true
+        break
+      fi
+    done
+    if ! $found; then
+      drift "/Applications/$app not tracked (add to Brewfile or manual-apps.conf)"
+    fi
+  done < <(ls /Applications/ 2>/dev/null)
+
+  # --- VS Code extensions ---
+  section "VS Code extensions"
+  local brewfile_exts installed_exts ext_drift_count ext
+  if command -v code &>/dev/null; then
+    brewfile_exts=$(grep '^vscode ' "$BREWFILE" | sed 's/^vscode "\(.*\)"/\1/' | tr '[:upper:]' '[:lower:]' | sort)
+    installed_exts=$(code --list-extensions 2>/dev/null | tr '[:upper:]' '[:lower:]' | sort)
+    ext_drift_count=${#DRIFT[@]}
+
+    while IFS= read -r ext; do
+      [[ -z "$ext" ]] && continue
+      drift "VS Code extension '$ext' installed but not in Brewfile"
+    done < <(comm -23 <(echo "$installed_exts") <(echo "$brewfile_exts"))
+
+    while IFS= read -r ext; do
+      [[ -z "$ext" ]] && continue
+      drift "VS Code extension '$ext' in Brewfile but not installed"
+    done < <(comm -13 <(echo "$installed_exts") <(echo "$brewfile_exts"))
+
+    if [[ ${#DRIFT[@]} -eq $ext_drift_count ]]; then
+      ok "VS Code extensions match Brewfile"
+    fi
+  else
+    ok "VS Code not installed (skipping extension check)"
+  fi
+
+  # --- uv tools ---
+  section "uv tools"
+  local brewfile_uv installed_uv uv_drift_count
+  if command -v uv &>/dev/null; then
+    brewfile_uv=$(grep '^uv ' "$BREWFILE" | sed 's/^uv "\(.*\)"/\1/' | sort)
+    installed_uv=$(uv tool list 2>/dev/null | grep -v '^-' | awk '{print $1}' | sort)
+    uv_drift_count=${#DRIFT[@]}
+
+    while IFS= read -r pkg; do
+      [[ -z "$pkg" ]] && continue
+      drift "uv tool '$pkg' installed but not in Brewfile"
+    done < <(comm -23 <(echo "$installed_uv") <(echo "$brewfile_uv"))
+
+    while IFS= read -r pkg; do
+      [[ -z "$pkg" ]] && continue
+      drift "uv tool '$pkg' in Brewfile but not installed"
+    done < <(comm -13 <(echo "$installed_uv") <(echo "$brewfile_uv"))
+
+    if [[ ${#DRIFT[@]} -eq $uv_drift_count ]]; then
+      ok "uv tools match Brewfile"
+    fi
+  else
+    ok "uv not installed (skipping uv tool check)"
+  fi
+
+  # --- npm globals ---
+  section "npm globals"
+  local brewfile_npm installed_npm npm_drift_count
+  if command -v npm &>/dev/null; then
+    brewfile_npm=$(grep '^npm ' "$BREWFILE" | sed 's/^npm "\(.*\)"/\1/' | sort)
+    # `npm ls -g --depth=0 --json` survives broken symlinks; fall back to parsing text
+    installed_npm=$(npm ls -g --depth=0 --json 2>/dev/null | jq -r '(.dependencies // {}) | keys[]' 2>/dev/null | sort)
+    npm_drift_count=${#DRIFT[@]}
+
+    while IFS= read -r pkg; do
+      [[ -z "$pkg" ]] && continue
+      # npm itself ships with node and is not tracked in Brewfile
+      [[ "$pkg" == "npm" ]] && continue
+      drift "npm global '$pkg' installed but not in Brewfile"
+    done < <(comm -23 <(echo "$installed_npm") <(echo "$brewfile_npm"))
+
+    while IFS= read -r pkg; do
+      [[ -z "$pkg" ]] && continue
+      drift "npm global '$pkg' in Brewfile but not installed"
+    done < <(comm -13 <(echo "$installed_npm") <(echo "$brewfile_npm"))
+
+    if [[ ${#DRIFT[@]} -eq $npm_drift_count ]]; then
+      ok "npm globals match Brewfile"
+    fi
+  else
+    ok "npm not installed (skipping npm globals check)"
+  fi
+
+  # --- Symlinks ---
+  section "Symlinks"
+
+  check_link "${HOME}/.zshrc"                                                    "${DOTFILES}/.zshrc"
+  check_link "${HOME}/.tmux.conf"                                                "${DOTFILES}/.tmux.conf"
+  check_link "${HOME}/.gitconfig"                                                "${DOTFILES}/.gitconfig"
+  check_link "${HOME}/.ssh/config"                                               "${DOTFILES}/.ssh-config"
+  check_link "${HOME}/.config/ghostty/config"                                    "${DOTFILES}/.config/ghostty/config"
+  check_link "${HOME}/.config/nvim"                                              "${DOTFILES}/.config/nvim"
+  check_link "${HOME}/.config/starship.toml"                                     "${DOTFILES}/.config/starship.toml"
+  check_link "${HOME}/.config/atuin/config.toml"                                 "${DOTFILES}/.config/atuin/config.toml"
+  check_link "${HOME}/.config/btop/btop.conf"                                    "${DOTFILES}/.config/btop/btop.conf"
+  check_link "${HOME}/.config/gh/config.yml"                                     "${DOTFILES}/.config/gh/config.yml"
+  check_link "${HOME}/.config/git/ignore"                                        "${DOTFILES}/.config/git/ignore"
+  check_link "${HOME}/.config/fd/config"                                         "${DOTFILES}/.config/fd/config"
+  check_link "${HOME}/.config/gcloud/configurations/config_default"              "${DOTFILES}/.config/gcloud/configurations/config_default"
+  check_link "${HOME}/.config/gws/client_secret.json"                            "${PRIVATE}/gws/client_secret.json"
+  check_link_or_content "${HOME}/.config/gws/.encryption_key"                    "${PRIVATE}/gws/.encryption_key"
+  check_link_or_content "${HOME}/.config/gws/credentials.enc"                     "${PRIVATE}/gws/credentials.enc"
+  check_link "${HOME}/.claude/CLAUDE.md"                                         "${PRIVATE}/claude/CLAUDE.md"
+  check_link "${HOME}/.claude/memory/MEMORY.md"                                  "${PRIVATE}/claude/memory/MEMORY.md"
+  check_link "${HOME}/.claude/statusline-command.sh"                             "${DOTFILES}/.claude/statusline-command.sh"
+  check_link "${HOME}/.claude/skills"                                              "${DOTFILES}/.claude/skills"
+  check_link "${HOME}/Library/Application Support/Code/User/settings.json"       "${DOTFILES}/vscode-settings.json"
+  check_link "${HOME}/Library/Application Support/Code/User/keybindings.json"    "${DOTFILES}/vscode-keybindings.json"
+  check_link "${HOME}/.config/dagu/dags"                                         "${HOME}/github/system/dagu"
+  check_link "${HOME}/.config/dagu/base.yaml"                                    "${DOTFILES}/.config/dagu/base.yaml"
+
+  local symlink_drifts
+  symlink_drifts=$(printf '%s\n' "${DRIFT[@]+"${DRIFT[@]}"}" | grep -c "symlink\|points to" 2>/dev/null || true)
+  if [[ "$symlink_drifts" -eq 0 ]]; then
+    ok "all symlinks intact"
+  fi
+
+  # --- File associations ---
+  section "File associations"
+  local assoc_file assoc_drift_count ext expected_bundle actual_bundle
+  if command -v duti &>/dev/null; then
+    assoc_file="${HOME}/github/system/scripts/file-associations.conf"
+    assoc_drift_count=${#DRIFT[@]}
+    while IFS=' ' read -r ext expected_bundle; do
+      [[ -z "$ext" || "$ext" == \#* ]] && continue
+      actual_bundle=$(duti -x "${ext#.}" 2>/dev/null | tail -1)
+      if [[ "$actual_bundle" != "$expected_bundle" ]]; then
+        drift "extension '$ext' handled by '$actual_bundle', expected '$expected_bundle'"
+      fi
+    done < "$assoc_file"
+    if [[ ${#DRIFT[@]} -eq $assoc_drift_count ]]; then
+      ok "file associations match"
+    fi
+  else
+    ok "duti not installed (skipping file association check)"
+  fi
+
+  # --- Standalone binaries (not managed by Homebrew) ---
+  section "Standalone binaries"
+  local standalone_bins bin_drift_count bin
+  standalone_bins=(claude msgvault)
+  bin_drift_count=${#DRIFT[@]}
+
+  for bin in "${standalone_bins[@]}"; do
+    if ! command -v "$bin" &>/dev/null; then
+      drift "'$bin' not installed (expected in PATH)"
     fi
   done
-  if ! $found; then
-    drift "/Applications/$app not tracked (add to Brewfile or manual-apps.conf)"
+
+  if [[ ${#DRIFT[@]} -eq $bin_drift_count ]]; then
+    ok "all standalone binaries present"
   fi
-done < <(ls /Applications/ 2>/dev/null)
 
-# --- VS Code extensions ---
-section "VS Code extensions"
-if command -v code &>/dev/null; then
-  brewfile_exts=$(grep '^vscode ' "$BREWFILE" | sed 's/^vscode "\(.*\)"/\1/' | tr '[:upper:]' '[:lower:]' | sort)
-  installed_exts=$(code --list-extensions 2>/dev/null | tr '[:upper:]' '[:lower:]' | sort)
-  ext_drift_count=${#DRIFT[@]}
+  # --- New config directories ---
+  section "New config directories"
+  # Config dirs managed in dotfiles or private (detected automatically)
+  local known_config_dirs dir UNMANAGED_CONFIG_FILE line config_drift_count dirname found known
+  known_config_dirs=()
+  while IFS= read -r dir; do
+    known_config_dirs+=("$(basename "$dir")")
+  done < <(find "${DOTFILES}/.config" -mindepth 1 -maxdepth 1 2>/dev/null)
+  while IFS= read -r dir; do
+    known_config_dirs+=("$(basename "$dir")")
+  done < <(find "${PRIVATE}" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
 
-  while IFS= read -r ext; do
-    [[ -z "$ext" ]] && continue
-    drift "VS Code extension '$ext' installed but not in Brewfile"
-  done < <(comm -23 <(echo "$installed_exts") <(echo "$brewfile_exts"))
+  # Additional unmanaged but expected config dirs
+  UNMANAGED_CONFIG_FILE="${HOME}/github/system/scripts/unmanaged-config-dirs.conf"
+  while IFS= read -r line; do
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    known_config_dirs+=("$line")
+  done < "$UNMANAGED_CONFIG_FILE"
 
-  while IFS= read -r ext; do
-    [[ -z "$ext" ]] && continue
-    drift "VS Code extension '$ext' in Brewfile but not installed"
-  done < <(comm -13 <(echo "$installed_exts") <(echo "$brewfile_exts"))
+  config_drift_count=${#DRIFT[@]}
+  while IFS= read -r dir; do
+    [[ -z "$dir" ]] && continue
+    dirname=$(basename "$dir")
+    found=false
+    for known in "${known_config_dirs[@]}"; do
+      if [[ "$dirname" == "$known" ]]; then
+        found=true
+        break
+      fi
+    done
+    if ! $found; then
+      drift "~/.config/$dirname exists but isn't managed (new tool config?)"
+    fi
+  done < <(find "${HOME}/.config" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
 
-  if [[ ${#DRIFT[@]} -eq $ext_drift_count ]]; then
-    ok "VS Code extensions match Brewfile"
+  if [[ ${#DRIFT[@]} -eq $config_drift_count ]]; then
+    ok "no new config directories"
   fi
-else
-  ok "VS Code not installed (skipping extension check)"
-fi
 
-# --- uv tools ---
-section "uv tools"
-if command -v uv &>/dev/null; then
-  brewfile_uv=$(grep '^uv ' "$BREWFILE" | sed 's/^uv "\(.*\)"/\1/' | sort)
-  installed_uv=$(uv tool list 2>/dev/null | grep -v '^-' | awk '{print $1}' | sort)
-  uv_drift_count=${#DRIFT[@]}
-
-  while IFS= read -r pkg; do
-    [[ -z "$pkg" ]] && continue
-    drift "uv tool '$pkg' installed but not in Brewfile"
-  done < <(comm -23 <(echo "$installed_uv") <(echo "$brewfile_uv"))
-
-  while IFS= read -r pkg; do
-    [[ -z "$pkg" ]] && continue
-    drift "uv tool '$pkg' in Brewfile but not installed"
-  done < <(comm -13 <(echo "$installed_uv") <(echo "$brewfile_uv"))
-
-  if [[ ${#DRIFT[@]} -eq $uv_drift_count ]]; then
-    ok "uv tools match Brewfile"
+  # --- Shell scripts (syntax) ---
+  section "Shell scripts (syntax)"
+  local syntax_drift_count f err
+  syntax_drift_count=${#DRIFT[@]}
+  while IFS= read -r f; do
+    if [[ "$f" == *.sh ]] || head -c 64 "$f" 2>/dev/null | grep -qE '^#!.*\b(bash|sh)\b'; then
+      if ! err=$(bash -n "$f" 2>&1); then
+        drift "shell parse error in ${f#${HOME}/github/system/}: $(echo "$err" | head -1)"
+      fi
+    fi
+  done < <(find "${HOME}/github/system/scripts" -maxdepth 2 -type f 2>/dev/null)
+  if [[ ${#DRIFT[@]} -eq $syntax_drift_count ]]; then
+    ok "all scripts parse cleanly"
   fi
-else
-  ok "uv not installed (skipping uv tool check)"
-fi
+}
 
-# --- npm globals ---
-section "npm globals"
-if command -v npm &>/dev/null; then
-  brewfile_npm=$(grep '^npm ' "$BREWFILE" | sed 's/^npm "\(.*\)"/\1/' | sort)
-  # `npm ls -g --depth=0 --json` survives broken symlinks; fall back to parsing text
-  installed_npm=$(npm ls -g --depth=0 --json 2>/dev/null | jq -r '(.dependencies // {}) | keys[]' 2>/dev/null | sort)
-  npm_drift_count=${#DRIFT[@]}
-
-  while IFS= read -r pkg; do
-    [[ -z "$pkg" ]] && continue
-    # npm itself ships with node and is not tracked in Brewfile
-    [[ "$pkg" == "npm" ]] && continue
-    drift "npm global '$pkg' installed but not in Brewfile"
-  done < <(comm -23 <(echo "$installed_npm") <(echo "$brewfile_npm"))
-
-  while IFS= read -r pkg; do
-    [[ -z "$pkg" ]] && continue
-    drift "npm global '$pkg' in Brewfile but not installed"
-  done < <(comm -13 <(echo "$installed_npm") <(echo "$brewfile_npm"))
-
-  if [[ ${#DRIFT[@]} -eq $npm_drift_count ]]; then
-    ok "npm globals match Brewfile"
-  fi
-else
-  ok "npm not installed (skipping npm globals check)"
-fi
-
-# --- Symlinks ---
-section "Symlinks"
-
+# Symlink helpers (used by run_local_checks).
 check_link() {
   local dest="$1" expected_src="${2%/}"  # strip trailing slash for comparison
   if [[ ! -L "$dest" ]]; then
@@ -226,364 +427,267 @@ check_link_or_content() {
   fi
 }
 
-check_link "${HOME}/.zshrc"                                                    "${DOTFILES}/.zshrc"
-check_link "${HOME}/.tmux.conf"                                                "${DOTFILES}/.tmux.conf"
-check_link "${HOME}/.gitconfig"                                                "${DOTFILES}/.gitconfig"
-check_link "${HOME}/.ssh/config"                                               "${DOTFILES}/.ssh-config"
-check_link "${HOME}/.config/ghostty/config"                                    "${DOTFILES}/.config/ghostty/config"
-check_link "${HOME}/.config/nvim"                                              "${DOTFILES}/.config/nvim"
-check_link "${HOME}/.config/starship.toml"                                     "${DOTFILES}/.config/starship.toml"
-check_link "${HOME}/.config/atuin/config.toml"                                 "${DOTFILES}/.config/atuin/config.toml"
-check_link "${HOME}/.config/btop/btop.conf"                                    "${DOTFILES}/.config/btop/btop.conf"
-check_link "${HOME}/.config/gh/config.yml"                                     "${DOTFILES}/.config/gh/config.yml"
-check_link "${HOME}/.config/git/ignore"                                        "${DOTFILES}/.config/git/ignore"
-check_link "${HOME}/.config/fd/config"                                         "${DOTFILES}/.config/fd/config"
-check_link "${HOME}/.config/gcloud/configurations/config_default"              "${DOTFILES}/.config/gcloud/configurations/config_default"
-check_link "${HOME}/.config/gws/client_secret.json"                            "${PRIVATE}/gws/client_secret.json"
-check_link_or_content "${HOME}/.config/gws/.encryption_key"                    "${PRIVATE}/gws/.encryption_key"
-check_link_or_content "${HOME}/.config/gws/credentials.enc"                     "${PRIVATE}/gws/credentials.enc"
-check_link "${HOME}/.claude/CLAUDE.md"                                         "${PRIVATE}/claude/CLAUDE.md"
-check_link "${HOME}/.claude/memory/MEMORY.md"                                  "${PRIVATE}/claude/memory/MEMORY.md"
-check_link "${HOME}/.claude/statusline-command.sh"                             "${DOTFILES}/.claude/statusline-command.sh"
-check_link "${HOME}/.claude/skills"                                              "${DOTFILES}/.claude/skills"
-check_link "${HOME}/Library/Application Support/Code/User/settings.json"       "${DOTFILES}/vscode-settings.json"
-check_link "${HOME}/Library/Application Support/Code/User/keybindings.json"    "${DOTFILES}/vscode-keybindings.json"
-check_link "${HOME}/.config/dagu/dags"                                         "${HOME}/github/system/dagu"
-check_link "${HOME}/.config/dagu/base.yaml"                                    "${DOTFILES}/.config/dagu/base.yaml"
+# =============================================================================
+# Remote-parity surface (Mac dotfiles vs remote/ Linux equivalents).
+# Portable: pure file comparisons (grep/sed/comm/diff/jq), no brew/macOS calls,
+# so it runs both on the Mac (dev-up gate) and on the droplet (bootstrap gate).
+# =============================================================================
+run_remote_checks() {
+  # --- Remote: Aliases & shell settings ---
+  section "Remote: Aliases & shell"
+  local remote_shell_drift_count mac_aliases remote_aliases a shared_alias mac_val remote_val
+  local mac_setopts remote_setopts mac_exports remote_exports var mac_tools remote_tools tool
+  local mac_bindkeys remote_bindkeys line
+  remote_shell_drift_count=${#DRIFT[@]}
 
-symlink_drifts=$(printf '%s\n' "${DRIFT[@]+"${DRIFT[@]}"}" | grep -c "symlink\|points to" 2>/dev/null || true)
-if [[ "$symlink_drifts" -eq 0 ]]; then
-  ok "all symlinks intact"
-fi
+  # Compare alias names (keys only — values may legitimately differ)
+  mac_aliases=$(grep -E '^alias ' "${DOTFILES}/.zshrc" | sed "s/=.*//" | sort)
+  remote_aliases=$(grep -E '^alias ' "${REMOTE}/zshrc" | sed "s/=.*//" | sort)
+  while IFS= read -r a; do
+    [[ -z "$a" ]] && continue
+    # Mac-only aliases (clipboard, trash, glow, notes, dev SSH)
+    case "$a" in
+      "alias pbc"|"alias pbp"|"alias rm"|"alias md"|"alias n"|"alias dev") continue ;;
+    esac
+    drift "zshrc: $a missing from remote"
+  done < <(comm -23 <(echo "$mac_aliases") <(echo "$remote_aliases"))
 
-# --- File associations ---
-section "File associations"
-if command -v duti &>/dev/null; then
-  assoc_file="${HOME}/github/system/scripts/file-associations.conf"
-  assoc_drift_count=${#DRIFT[@]}
-  while IFS=' ' read -r ext expected_bundle; do
-    [[ -z "$ext" || "$ext" == \#* ]] && continue
-    actual_bundle=$(duti -x "${ext#.}" 2>/dev/null | tail -1)
-    if [[ "$actual_bundle" != "$expected_bundle" ]]; then
-      drift "extension '$ext' handled by '$actual_bundle', expected '$expected_bundle'"
+  # Compare alias values for shared aliases (strip inline comments before comparing)
+  while IFS= read -r shared_alias; do
+    [[ -z "$shared_alias" ]] && continue
+    mac_val=$(grep -E "^${shared_alias}=" "${DOTFILES}/.zshrc" | head -1 | strip_comments)
+    remote_val=$(grep -E "^${shared_alias}=" "${REMOTE}/zshrc" | head -1 | strip_comments)
+    if [[ "$mac_val" != "$remote_val" ]]; then
+      drift "zshrc: $shared_alias differs — mac: ${mac_val#*=} remote: ${remote_val#*=}"
     fi
-  done < "$assoc_file"
-  if [[ ${#DRIFT[@]} -eq $assoc_drift_count ]]; then
-    ok "file associations match"
+  done < <(comm -12 <(echo "$mac_aliases") <(echo "$remote_aliases"))
+
+  # Compare setopt lines (strip inline comments)
+  mac_setopts=$(grep '^setopt ' "${DOTFILES}/.zshrc" | strip_comments | sort)
+  remote_setopts=$(grep '^setopt ' "${REMOTE}/zshrc" | strip_comments | sort)
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    drift "zshrc: '$line' missing from remote"
+  done < <(comm -23 <(echo "$mac_setopts") <(echo "$remote_setopts"))
+
+  # Compare exports (skip PATH, GOG_ACCOUNT, GITHUB_PERSONAL_ACCESS_TOKEN)
+  mac_exports=$(grep '^export ' "${DOTFILES}/.zshrc" | grep -v 'PATH=\|GOG_ACCOUNT\|GITHUB_PERSONAL_ACCESS_TOKEN' | sed 's/=.*//' | sort)
+  remote_exports=$(grep '^export ' "${REMOTE}/zshrc" | grep -v 'PATH=\|GITHUB_PERSONAL_ACCESS_TOKEN' | sed 's/=.*//' | sort)
+  while IFS= read -r var; do
+    [[ -z "$var" ]] && continue
+    drift "zshrc: $var missing from remote"
+  done < <(comm -23 <(echo "$mac_exports") <(echo "$remote_exports"))
+
+  # Compare tool initializations by tool name (ignore path differences)
+  # Extract: starship, zoxide, fzf, atuin
+  mac_tools=$(grep -E '^eval |^source <' "${DOTFILES}/.zshrc" | sed 's/.*(\(.*\) .*/\1/; s/.*<(\(.*\) .*/\1/' | grep -oE '[a-z]+' | sort -u)
+  remote_tools=$(grep -E '^eval |^source <' "${REMOTE}/zshrc" | sed 's/.*(\(.*\) .*/\1/; s/.*<(\(.*\) .*/\1/' | grep -oE '[a-z]+' | sort -u)
+  while IFS= read -r tool; do
+    [[ -z "$tool" ]] && continue
+    # Mac-only tools (see mac_only_tools list in 'Brewfile vs bootstrap' section)
+    case "$tool" in
+      try) continue ;;
+    esac
+    drift "zshrc: tool init '$tool' missing from remote"
+  done < <(comm -23 <(echo "$mac_tools") <(echo "$remote_tools"))
+
+  # Compare bindkey lines (strip inline comments)
+  mac_bindkeys=$(grep '^bindkey ' "${DOTFILES}/.zshrc" | strip_comments | sort)
+  remote_bindkeys=$(grep '^bindkey ' "${REMOTE}/zshrc" | strip_comments | sort)
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    drift "zshrc: '$line' missing from remote"
+  done < <(comm -23 <(echo "$mac_bindkeys") <(echo "$remote_bindkeys"))
+
+  if [[ ${#DRIFT[@]} -eq $remote_shell_drift_count ]]; then
+    ok "aliases & shell settings in sync"
   fi
-else
-  ok "duti not installed (skipping file association check)"
-fi
 
-# --- Standalone binaries (not managed by Homebrew) ---
-section "Standalone binaries"
-standalone_bins=(claude msgvault)
-bin_drift_count=${#DRIFT[@]}
+  # --- Remote: Tmux config ---
+  section "Remote: Tmux config"
+  local tmux_drift_count tmux_filter mac_tmux remote_tmux line
+  tmux_drift_count=${#DRIFT[@]}
 
-for bin in "${standalone_bins[@]}"; do
-  if ! command -v "$bin" &>/dev/null; then
-    drift "'$bin' not installed (expected in PATH)"
+  # Extract functional lines (skip comments, blanks, known platform diffs).
+  # Strip inline comments and collapse internal whitespace so alignment spacing
+  # and documentation comments don't trigger drift.
+  tmux_filter='^\s*$|^#|pbcopy|copy-pipe-and-cancel|copy-selection-and-cancel|default-command|@plugin|@continuum|run .*tpm'
+  tmux_normalize() { strip_comments | sed -E 's/[[:space:]]+/ /g'; }
+  mac_tmux=$(grep -vE "$tmux_filter" "${DOTFILES}/.tmux.conf" | tmux_normalize | sort)
+  remote_tmux=$(grep -vE "$tmux_filter" "${REMOTE}/tmux.conf" | tmux_normalize | sort)
+
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    drift "tmux: Mac-only line: $line"
+  done < <(comm -23 <(echo "$mac_tmux") <(echo "$remote_tmux"))
+
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    drift "tmux: remote-only line: $line"
+  done < <(comm -13 <(echo "$mac_tmux") <(echo "$remote_tmux"))
+
+  if [[ ${#DRIFT[@]} -eq $tmux_drift_count ]]; then
+    ok "tmux configs in sync"
   fi
-done
 
-if [[ ${#DRIFT[@]} -eq $bin_drift_count ]]; then
-  ok "all standalone binaries present"
-fi
+  # --- Remote: Git config ---
+  section "Remote: Git config"
+  local git_drift_count git_filter mac_git remote_git line
+  git_drift_count=${#DRIFT[@]}
 
-# --- New config directories ---
-section "New config directories"
-# Config dirs managed in dotfiles or private (detected automatically)
-known_config_dirs=()
-while IFS= read -r dir; do
-  known_config_dirs+=("$(basename "$dir")")
-done < <(find "${DOTFILES}/.config" -mindepth 1 -maxdepth 1 2>/dev/null)
-while IFS= read -r dir; do
-  known_config_dirs+=("$(basename "$dir")")
-done < <(find "${PRIVATE}" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
+  # Strip comments, blank lines, credential sections, and signing block
+  git_filter='^\s*$|^#|^\[credential|helper|gpgsign|gpg'
+  mac_git=$(grep -vE "$git_filter" "${DOTFILES}/.gitconfig" | strip_comments | sort)
+  remote_git=$(grep -vE "$git_filter" "${REMOTE}/gitconfig" | strip_comments | sort)
 
-# Additional unmanaged but expected config dirs
-UNMANAGED_CONFIG_FILE="${HOME}/github/system/scripts/unmanaged-config-dirs.conf"
-while IFS= read -r line; do
-  [[ -z "$line" || "$line" == \#* ]] && continue
-  known_config_dirs+=("$line")
-done < "$UNMANAGED_CONFIG_FILE"
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    drift "gitconfig: Mac-only line: $line"
+  done < <(comm -23 <(echo "$mac_git") <(echo "$remote_git"))
 
-config_drift_count=${#DRIFT[@]}
-while IFS= read -r dir; do
-  [[ -z "$dir" ]] && continue
-  dirname=$(basename "$dir")
-  found=false
-  for known in "${known_config_dirs[@]}"; do
-    if [[ "$dirname" == "$known" ]]; then
-      found=true
-      break
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    drift "gitconfig: remote-only line: $line"
+  done < <(comm -13 <(echo "$mac_git") <(echo "$remote_git"))
+
+  if [[ ${#DRIFT[@]} -eq $git_drift_count ]]; then
+    ok "git configs in sync"
+  fi
+
+  # --- Remote: Shared dotfiles ---
+  section "Remote: Shared dotfiles"
+  local shared_drift_count shared_files f filepath
+  shared_drift_count=${#DRIFT[@]}
+
+  shared_files=(
+    "dotfiles/.config/starship.toml"
+    "dotfiles/.config/atuin/config.toml"
+    "dotfiles/.config/nvim/init.lua"
+    "dotfiles/.config/btop/btop.conf"
+  )
+  for f in "${shared_files[@]}"; do
+    filepath="${HOME}/github/system/${f}"
+    [[ -f "$filepath" ]] || continue
+    if grep -qiE '/opt/homebrew|pbcopy|pbpaste|osxkeychain|UseKeychain|\.app\b|/Applications' "$filepath"; then
+      drift "shared file '$f' has macOS-specific content"
     fi
   done
-  if ! $found; then
-    drift "~/.config/$dirname exists but isn't managed (new tool config?)"
+
+  if [[ ${#DRIFT[@]} -eq $shared_drift_count ]]; then
+    ok "shared dotfiles have no macOS-specific content"
   fi
-done < <(find "${HOME}/.config" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
 
-if [[ ${#DRIFT[@]} -eq $config_drift_count ]]; then
-  ok "no new config directories"
-fi
+  # --- Remote: Claude Code settings (droplet heredoc) ---
+  section "Remote: Claude Code settings"
+  local claude_drift_count remote_settings key val
+  claude_drift_count=${#DRIFT[@]}
 
-# =============================================================================
-# Remote config drift (Mac dotfiles vs remote/ Linux equivalents)
-# =============================================================================
-
-# --- Remote: Aliases & shell settings ---
-section "Remote: Aliases & shell"
-remote_shell_drift_count=${#DRIFT[@]}
-
-# Compare alias names (keys only — values may legitimately differ)
-mac_aliases=$(grep -E '^alias ' "${DOTFILES}/.zshrc" | sed "s/=.*//" | sort)
-remote_aliases=$(grep -E '^alias ' "${REMOTE}/zshrc" | sed "s/=.*//" | sort)
-while IFS= read -r a; do
-  [[ -z "$a" ]] && continue
-  # Mac-only aliases (clipboard, trash, glow, notes, dev SSH)
-  case "$a" in
-    "alias pbc"|"alias pbp"|"alias rm"|"alias md"|"alias n"|"alias dev") continue ;;
-  esac
-  drift "zshrc: $a missing from remote"
-done < <(comm -23 <(echo "$mac_aliases") <(echo "$remote_aliases"))
-
-# Compare alias values for shared aliases (strip inline comments before comparing)
-while IFS= read -r shared_alias; do
-  [[ -z "$shared_alias" ]] && continue
-  mac_val=$(grep -E "^${shared_alias}=" "${DOTFILES}/.zshrc" | head -1 | strip_comments)
-  remote_val=$(grep -E "^${shared_alias}=" "${REMOTE}/zshrc" | head -1 | strip_comments)
-  if [[ "$mac_val" != "$remote_val" ]]; then
-    drift "zshrc: $shared_alias differs — mac: ${mac_val#*=} remote: ${remote_val#*=}"
+  # We assert the bootstrap heredoc on its OWN terms — valid JSON plus the keys
+  # that make the droplet run Claude unattended. We deliberately do NOT diff it
+  # against the Mac's live ~/.claude/settings.json: the two are config for
+  # different machines (Mac has UI/plugin preferences; the droplet has its own
+  # env, mcpServers, unattended flags) and legitimately diverge. Equality-diffing
+  # volatile Mac state against this static spec was a perpetual re-drift
+  # treadmill — see private/GOTCHAS.md "Claude settings ... keep re-drifting".
+  remote_settings=$(sed -n '/^cat.*<<.*SETTINGS/,/^SETTINGS$/p' "${REMOTE}/bootstrap.sh" | sed '1d;$d')
+  if [[ -z "$remote_settings" ]]; then
+    drift "could not extract Claude settings heredoc from remote/bootstrap.sh"
+  elif ! command -v jq &>/dev/null; then
+    ok "jq not installed (skipping Claude settings check)"
+  elif ! echo "$remote_settings" | jq empty 2>/dev/null; then
+    drift "Claude settings heredoc in remote/bootstrap.sh is not valid JSON"
+  else
+    for key in skipAutoPermissionPrompt skipDangerousModePermissionPrompt; do
+      val=$(echo "$remote_settings" | jq -r --arg k "$key" '.[$k] // empty')
+      if [[ "$val" != "true" ]]; then
+        drift "Claude settings heredoc missing required '$key: true' (droplet won't run unattended)"
+      fi
+    done
   fi
-done < <(comm -12 <(echo "$mac_aliases") <(echo "$remote_aliases"))
 
-# Compare setopt lines (strip inline comments)
-mac_setopts=$(grep '^setopt ' "${DOTFILES}/.zshrc" | strip_comments | sort)
-remote_setopts=$(grep '^setopt ' "${REMOTE}/zshrc" | strip_comments | sort)
-while IFS= read -r line; do
-  [[ -z "$line" ]] && continue
-  drift "zshrc: '$line' missing from remote"
-done < <(comm -23 <(echo "$mac_setopts") <(echo "$remote_setopts"))
-
-# Compare exports (skip PATH, GOG_ACCOUNT, GITHUB_PERSONAL_ACCESS_TOKEN)
-mac_exports=$(grep '^export ' "${DOTFILES}/.zshrc" | grep -v 'PATH=\|GOG_ACCOUNT\|GITHUB_PERSONAL_ACCESS_TOKEN' | sed 's/=.*//' | sort)
-remote_exports=$(grep '^export ' "${REMOTE}/zshrc" | grep -v 'PATH=\|GITHUB_PERSONAL_ACCESS_TOKEN' | sed 's/=.*//' | sort)
-while IFS= read -r var; do
-  [[ -z "$var" ]] && continue
-  drift "zshrc: $var missing from remote"
-done < <(comm -23 <(echo "$mac_exports") <(echo "$remote_exports"))
-
-# Compare tool initializations by tool name (ignore path differences)
-# Extract: starship, zoxide, fzf, atuin
-mac_tools=$(grep -E '^eval |^source <' "${DOTFILES}/.zshrc" | sed 's/.*(\(.*\) .*/\1/; s/.*<(\(.*\) .*/\1/' | grep -oE '[a-z]+' | sort -u)
-remote_tools=$(grep -E '^eval |^source <' "${REMOTE}/zshrc" | sed 's/.*(\(.*\) .*/\1/; s/.*<(\(.*\) .*/\1/' | grep -oE '[a-z]+' | sort -u)
-while IFS= read -r tool; do
-  [[ -z "$tool" ]] && continue
-  # Mac-only tools (see mac_only_tools list in 'Brewfile vs bootstrap' section)
-  case "$tool" in
-    try) continue ;;
-  esac
-  drift "zshrc: tool init '$tool' missing from remote"
-done < <(comm -23 <(echo "$mac_tools") <(echo "$remote_tools"))
-
-# Compare bindkey lines (strip inline comments)
-mac_bindkeys=$(grep '^bindkey ' "${DOTFILES}/.zshrc" | strip_comments | sort)
-remote_bindkeys=$(grep '^bindkey ' "${REMOTE}/zshrc" | strip_comments | sort)
-while IFS= read -r line; do
-  [[ -z "$line" ]] && continue
-  drift "zshrc: '$line' missing from remote"
-done < <(comm -23 <(echo "$mac_bindkeys") <(echo "$remote_bindkeys"))
-
-if [[ ${#DRIFT[@]} -eq $remote_shell_drift_count ]]; then
-  ok "aliases & shell settings in sync"
-fi
-
-# --- Remote: Tmux config ---
-section "Remote: Tmux config"
-tmux_drift_count=${#DRIFT[@]}
-
-# Extract functional lines (skip comments, blanks, known platform diffs).
-# Strip inline comments and collapse internal whitespace so alignment spacing
-# and documentation comments don't trigger drift.
-tmux_filter='^\s*$|^#|pbcopy|copy-pipe-and-cancel|copy-selection-and-cancel|default-command|@plugin|@continuum|run .*tpm'
-tmux_normalize() { strip_comments | sed -E 's/[[:space:]]+/ /g'; }
-mac_tmux=$(grep -vE "$tmux_filter" "${DOTFILES}/.tmux.conf" | tmux_normalize | sort)
-remote_tmux=$(grep -vE "$tmux_filter" "${REMOTE}/tmux.conf" | tmux_normalize | sort)
-
-while IFS= read -r line; do
-  [[ -z "$line" ]] && continue
-  drift "tmux: Mac-only line: $line"
-done < <(comm -23 <(echo "$mac_tmux") <(echo "$remote_tmux"))
-
-while IFS= read -r line; do
-  [[ -z "$line" ]] && continue
-  drift "tmux: remote-only line: $line"
-done < <(comm -13 <(echo "$mac_tmux") <(echo "$remote_tmux"))
-
-if [[ ${#DRIFT[@]} -eq $tmux_drift_count ]]; then
-  ok "tmux configs in sync"
-fi
-
-# --- Remote: Git config ---
-section "Remote: Git config"
-git_drift_count=${#DRIFT[@]}
-
-# Strip comments, blank lines, credential sections, and signing block
-git_filter='^\s*$|^#|^\[credential|helper|gpgsign|gpg'
-mac_git=$(grep -vE "$git_filter" "${DOTFILES}/.gitconfig" | strip_comments | sort)
-remote_git=$(grep -vE "$git_filter" "${REMOTE}/gitconfig" | strip_comments | sort)
-
-while IFS= read -r line; do
-  [[ -z "$line" ]] && continue
-  drift "gitconfig: Mac-only line: $line"
-done < <(comm -23 <(echo "$mac_git") <(echo "$remote_git"))
-
-while IFS= read -r line; do
-  [[ -z "$line" ]] && continue
-  drift "gitconfig: remote-only line: $line"
-done < <(comm -13 <(echo "$mac_git") <(echo "$remote_git"))
-
-if [[ ${#DRIFT[@]} -eq $git_drift_count ]]; then
-  ok "git configs in sync"
-fi
-
-# --- Remote: Shared dotfiles ---
-section "Remote: Shared dotfiles"
-shared_drift_count=${#DRIFT[@]}
-
-shared_files=(
-  "dotfiles/.config/starship.toml"
-  "dotfiles/.config/atuin/config.toml"
-  "dotfiles/.config/nvim/init.lua"
-  "dotfiles/.config/btop/btop.conf"
-)
-for f in "${shared_files[@]}"; do
-  filepath="${HOME}/github/system/${f}"
-  [[ -f "$filepath" ]] || continue
-  if grep -qiE '/opt/homebrew|pbcopy|pbpaste|osxkeychain|UseKeychain|\.app\b|/Applications' "$filepath"; then
-    drift "shared file '$f' has macOS-specific content"
+  if [[ ${#DRIFT[@]} -eq $claude_drift_count ]]; then
+    ok "Claude settings heredoc has required unattended keys"
   fi
-done
 
-if [[ ${#DRIFT[@]} -eq $shared_drift_count ]]; then
-  ok "shared dotfiles have no macOS-specific content"
-fi
+  # --- Remote: Brewfile vs bootstrap ---
+  section "Remote: Brewfile vs bootstrap"
+  local brew_remote_drift_count mac_only_tools brewfile_cli bootstrap_tools tool mapped
+  brew_remote_drift_count=${#DRIFT[@]}
 
-# --- Remote: Claude Code settings ---
-section "Remote: Claude Code settings"
-claude_drift_count=${#DRIFT[@]}
+  # Mac-only tools that shouldn't be on the droplet
+  mac_only_tools="ccusage|cloc|dagu|doctl|duckdb|duti|epubcheck|ffmpeg|gemini-cli|git-crypt|git-filter-repo|glow|googleworkspace-cli|imagemagick|mas|poppler|python@3.12|trash|tree|try|watch|yarn|yt-dlp|zsh-autosuggestions|zsh-syntax-highlighting|zsh|git"
 
-mac_settings="${HOME}/.claude/settings.json"
-# Extract heredoc from bootstrap.sh (between SETTINGS markers)
-remote_settings=$(sed -n '/^cat.*<<.*SETTINGS/,/^SETTINGS$/p' "${REMOTE}/bootstrap.sh" | sed '1d;$d')
+  # Extract CLI tool names from Brewfile (formulae only)
+  brewfile_cli=$(grep '^brew ' "$BREWFILE" | sed 's/^brew "\(.*\)"/\1/' | sed 's|.*/||' | grep -vE "^(${mac_only_tools})$" | sort)
 
-if [[ -f "$mac_settings" && -n "$remote_settings" ]] && command -v jq &>/dev/null; then
-  # Keys that legitimately differ between Mac and the droplet are deleted from
-  # BOTH sides before comparing, so a Mac-only UI tweak doesn't read as drift:
-  #   skipAutoPermissionPrompt — remote-only (droplet runs Claude unattended)
-  #   tui                      — Mac-only (fullscreen TUI; a headless droplet
-  #                              has no use for it)
-  # Add new Mac-only preference keys here rather than mirroring them into the
-  # bootstrap heredoc. The heredoc is the droplet's required config, not a
-  # mirror of every local preference — see private/GOTCHAS.md "drift-check
-  # Claude settings & copilot-chat keep re-drifting".
-  jq_strip='del(.skipAutoPermissionPrompt, .tui)'
-  mac_normalized=$(jq -S "$jq_strip" "$mac_settings" 2>/dev/null || true)
-  remote_normalized=$(echo "$remote_settings" | jq -S "$jq_strip" 2>/dev/null || true)
-  if [[ -n "$mac_normalized" && -n "$remote_normalized" ]]; then
-    diff_output=$(diff <(echo "$mac_normalized") <(echo "$remote_normalized") || true)
-    if [[ -n "$diff_output" ]]; then
-      drift "Claude settings differ between Mac and bootstrap heredoc"
+  # Extract what bootstrap.sh installs (apt + gh_install + curl + special)
+  bootstrap_tools=$(
+    # apt packages
+    sed -n '/apt-get install/,/^$/p' "${REMOTE}/bootstrap.sh" | tr '\\' ' ' | tr -s ' ' '\n' | grep -vE '^\s*$|apt-get|install|-y|-qq|sudo'
+    # gh_install binary names
+    grep '^gh_install ' "${REMOTE}/bootstrap.sh" | awk '{print $NF}'
+    # curl installer tools (command -v checks)
+    grep 'command -v .* &>/dev/null' "${REMOTE}/bootstrap.sh" | grep -oE 'command -v [a-z]+' | awk '{print $NF}'
+    # special: node, gh, stylua, tpm (installed via git clone)
+    echo "node"
+    echo "gh"
+    echo "stylua"
+    echo "tpm"
+  )
+  bootstrap_tools=$(echo "$bootstrap_tools" | sort -u)
+
+  # Name mapping: Brewfile name -> bootstrap binary name
+  map_name() {
+    case "$1" in
+      git-delta) echo "delta" ;;
+      fd)        echo "fd-find" ;;
+      bat)       echo "bat" ;;
+      *)         echo "$1" ;;
+    esac
+  }
+
+  for tool in $brewfile_cli; do
+    mapped=$(map_name "$tool")
+    if ! echo "$bootstrap_tools" | grep -qx "$mapped"; then
+      drift "Brewfile tool '$tool' not in bootstrap.sh"
+    fi
+  done
+
+  if [[ ${#DRIFT[@]} -eq $brew_remote_drift_count ]]; then
+    ok "Brewfile CLI tools covered by bootstrap"
+  fi
+
+  # --- Remote: SSH config ---
+  section "Remote: SSH config"
+  local ssh_drift_count ssh_local
+  ssh_drift_count=${#DRIFT[@]}
+
+  ssh_local="${HOME}/.ssh/config.local"  # untracked, local-only; absent = no active droplet
+  if [[ -f "$ssh_local" ]]; then
+    if grep -q '<DROPLET_IP>' "$ssh_local"; then
+      drift "SSH config has placeholder <DROPLET_IP>"
+    elif ! grep -qE 'HostName [0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' "$ssh_local"; then
+      drift "SSH config: Host dev has no valid IP"
     fi
   fi
-fi
 
-if [[ ${#DRIFT[@]} -eq $claude_drift_count ]]; then
-  ok "Claude Code settings in sync"
-fi
-
-# --- Remote: Brewfile vs bootstrap ---
-section "Remote: Brewfile vs bootstrap"
-brew_remote_drift_count=${#DRIFT[@]}
-
-# Mac-only tools that shouldn't be on the droplet
-mac_only_tools="ccusage|cloc|dagu|doctl|duckdb|duti|epubcheck|ffmpeg|gemini-cli|git-crypt|git-filter-repo|glow|googleworkspace-cli|imagemagick|mas|poppler|python@3.12|trash|tree|try|watch|yarn|yt-dlp|zsh-autosuggestions|zsh-syntax-highlighting|zsh|git"
-
-# Extract CLI tool names from Brewfile (formulae only)
-brewfile_cli=$(grep '^brew ' "$BREWFILE" | sed 's/^brew "\(.*\)"/\1/' | sed 's|.*/||' | grep -vE "^(${mac_only_tools})$" | sort)
-
-# Extract what bootstrap.sh installs (apt + gh_install + curl + special)
-bootstrap_tools=$(
-  # apt packages
-  sed -n '/apt-get install/,/^$/p' "${REMOTE}/bootstrap.sh" | tr '\\' ' ' | tr -s ' ' '\n' | grep -vE '^\s*$|apt-get|install|-y|-qq|sudo'
-  # gh_install binary names
-  grep '^gh_install ' "${REMOTE}/bootstrap.sh" | awk '{print $NF}'
-  # curl installer tools (command -v checks)
-  grep 'command -v .* &>/dev/null' "${REMOTE}/bootstrap.sh" | grep -oE 'command -v [a-z]+' | awk '{print $NF}'
-  # special: node, gh, stylua, tpm (installed via git clone)
-  echo "node"
-  echo "gh"
-  echo "stylua"
-  echo "tpm"
-)
-bootstrap_tools=$(echo "$bootstrap_tools" | sort -u)
-
-# Name mapping: Brewfile name -> bootstrap binary name
-map_name() {
-  case "$1" in
-    git-delta) echo "delta" ;;
-    fd)        echo "fd-find" ;;
-    bat)       echo "bat" ;;
-    *)         echo "$1" ;;
-  esac
+  if [[ ${#DRIFT[@]} -eq $ssh_drift_count ]]; then
+    if [[ -f "$ssh_local" ]]; then
+      ok "SSH config has valid droplet IP"
+    else
+      ok "SSH config: no active droplet (config.local absent)"
+    fi
+  fi
 }
 
-for tool in $brewfile_cli; do
-  mapped=$(map_name "$tool")
-  if ! echo "$bootstrap_tools" | grep -qx "$mapped"; then
-    drift "Brewfile tool '$tool' not in bootstrap.sh"
-  fi
-done
-
-if [[ ${#DRIFT[@]} -eq $brew_remote_drift_count ]]; then
-  ok "Brewfile CLI tools covered by bootstrap"
-fi
-
-# --- Remote: SSH config ---
-section "Remote: SSH config"
-ssh_drift_count=${#DRIFT[@]}
-
-ssh_local="${HOME}/.ssh/config.local"  # untracked, local-only; absent = no active droplet
-if [[ -f "$ssh_local" ]]; then
-  if grep -q '<DROPLET_IP>' "$ssh_local"; then
-    drift "SSH config has placeholder <DROPLET_IP>"
-  elif ! grep -qE 'HostName [0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' "$ssh_local"; then
-    drift "SSH config: Host dev has no valid IP"
-  fi
-fi
-
-if [[ ${#DRIFT[@]} -eq $ssh_drift_count ]]; then
-  if [[ -f "$ssh_local" ]]; then
-    ok "SSH config has valid droplet IP"
-  else
-    ok "SSH config: no active droplet (config.local absent)"
-  fi
-fi
-
-# --- Shell scripts (syntax) ---
-section "Shell scripts (syntax)"
-syntax_drift_count=${#DRIFT[@]}
-while IFS= read -r f; do
-  if [[ "$f" == *.sh ]] || head -c 64 "$f" 2>/dev/null | grep -qE '^#!.*\b(bash|sh)\b'; then
-    if ! err=$(bash -n "$f" 2>&1); then
-      drift "shell parse error in ${f#${HOME}/github/system/}: $(echo "$err" | head -1)"
-    fi
-  fi
-done < <(find "${HOME}/github/system/scripts" -maxdepth 2 -type f 2>/dev/null)
-if [[ ${#DRIFT[@]} -eq $syntax_drift_count ]]; then
-  ok "all scripts parse cleanly"
-fi
+# =============================================================================
+# Run selected surface(s)
+# =============================================================================
+case "$MODE" in
+  local)  run_local_checks ;;
+  remote) run_remote_checks ;;
+  all)    run_local_checks; run_remote_checks ;;
+esac
 
 # --- Summary ---
 echo ""
@@ -599,6 +703,15 @@ for d in "${DRIFT[@]}"; do
   echo "  - $d"
 done
 
-# Drift is a real problem — exit non-zero so the dagu failure handler triggers
-# an autofix attempt. NOTIFY is no-op now (kept so existing dagu yaml works).
+# --notify (the daily local cron): drift is INFORMATIONAL, not a job failure.
+# Email the list (silent when clean — nothing reaches here) and exit 0 so the
+# dagu failure handler / autofix does NOT fire. Untracked local state is a
+# reconciliation decision for a human, not something to auto-commit at 3am.
+if [[ "$NOTIFY" == 1 ]]; then
+  send_drift_email "${#DRIFT[@]}" "${DRIFT[@]}"
+  exit 0
+fi
+
+# Manual run, or the --remote gate in dev-up / bootstrap.sh: exit 1 so a human
+# (or the calling gate) sees the non-zero status.
 exit 1

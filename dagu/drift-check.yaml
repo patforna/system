@@ -1,5 +1,10 @@
+# Daily LOCAL drift only. --notify makes drift informational: it emails the
+# list and exits 0, so the failure handler / autofix does NOT fire — untracked
+# Mac state is a reconciliation decision, not a job to auto-fix at 3am. The
+# remote-parity surface is NOT checked here; it runs as a gate in dev-up and
+# remote/bootstrap.sh, since it only matters when the devbox is provisioned.
 schedule: "0 3 * * *"
 
 steps:
   - name: drift-check
-    command: bash -c 'eval "$(/opt/homebrew/bin/brew shellenv)" && "${HOME}/github/system/scripts/drift-check" --notify'
+    command: bash -c 'eval "$(/opt/homebrew/bin/brew shellenv)" && "${HOME}/github/system/scripts/drift-check" --local --notify'
