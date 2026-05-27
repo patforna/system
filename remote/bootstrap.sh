@@ -52,7 +52,7 @@ echo "--- apt packages ---"
 sudo apt-get update -qq
 sudo apt-get install -y -qq \
   zsh tmux neovim git ripgrep bat fd-find btop jq curl unzip build-essential \
-  zsh-autosuggestions zsh-syntax-highlighting shellcheck figlet
+  zsh-autosuggestions zsh-syntax-highlighting shellcheck figlet git-crypt
 
 # Ubuntu ships bat as "batcat" and fd as "fdfind" — create symlinks
 sudo ln -sf /usr/bin/batcat /usr/local/bin/bat 2>/dev/null || true
@@ -142,6 +142,15 @@ else
   echo "  SKIP  uv"
 fi
 
+# rumdl (markdown linter) — TAD `just check-all` (md-check/md-format) calls it bare on PATH
+export PATH="$HOME/.local/bin:$PATH"
+if ! command -v rumdl &>/dev/null; then
+  echo "  GET   rumdl"
+  uv tool install rumdl > /dev/null 2>&1
+else
+  echo "  SKIP  rumdl"
+fi
+
 if ! command -v bun &>/dev/null; then
   echo "  GET   bun"
   curl -fsSL https://bun.sh/install | bash > /dev/null 2>&1
@@ -175,6 +184,39 @@ if ! command -v codex &>/dev/null; then
   echo "  OK    codex $(codex --version 2>/dev/null || echo installed)"
 else
   echo "  SKIP  codex $(codex --version 2>/dev/null)"
+fi
+echo ""
+
+# --- System scripts on PATH ---
+# CLI tools in scripts/ (+ private/scripts/ once unlocked) are on the interactive .zshrc PATH only;
+# symlink them into ~/.local/bin so non-interactive harness/just/dagu resolve them (claude-replay,
+# drift-check, …) — same reason as the bun symlink above. Convention: user-facing tools are
+# extensionless; *.sh are internal (this script, dot_files, dagu jobs) and must NOT land on PATH.
+echo "--- System scripts ---"
+mkdir -p "$HOME/.local/bin"
+for d in "$REPO_DIR/scripts" "$REPO_DIR/private/scripts"; do
+  [[ -d "$d" ]] || continue
+  for f in "$d"/*; do
+    [[ -f "$f" && -x "$f" ]] || continue
+    [[ "$f" == *.sh ]] && continue
+    # skip still-encrypted git-crypt blobs (private/ before `git-crypt unlock`)
+    [[ "$(head -c 10 "$f" | tr -d '\0')" == GITCRYPT* ]] && continue
+    ln -sf "$f" "$HOME/.local/bin/$(basename "$f")"
+  done
+done
+echo "  OK    scripts -> ~/.local/bin"
+echo ""
+
+# --- Playwright e2e system libs (TAD frontend / `just check-all`) ---
+# bun install fetches the chromium binary but not its OS libs (libatk, libcups, libgbm, mesa…);
+# without them e2e dies with `libatk-1.0.so.0`. install-deps apt-installs the set.
+echo "--- Playwright deps ---"
+if command -v bun &>/dev/null; then
+  sudo env "PATH=$PATH" DEBIAN_FRONTEND=noninteractive bunx playwright install-deps chromium > /dev/null 2>&1 \
+    && echo "  OK    playwright chromium deps" \
+    || echo "  WARN  playwright install-deps failed — run 'sudo bunx playwright install-deps chromium'"
+else
+  echo "  SKIP  playwright deps (bun missing)"
 fi
 echo ""
 

@@ -24,11 +24,14 @@ The `dev-up` and `dev-down` scripts for managing the droplet lifecycle live in `
 
 | Method | Tools |
 |---|---|
-| apt | zsh, tmux, neovim, git, ripgrep, bat, fd, btop, jq, build-essential, zsh-autosuggestions, zsh-syntax-highlighting |
+| apt | zsh, tmux, neovim, git, ripgrep, bat, fd, btop, jq, build-essential, zsh-autosuggestions, zsh-syntax-highlighting, git-crypt |
 | nodesource apt | Node.js 22 (Claude Code plugins) |
 | GitHub apt repo | gh |
 | GitHub releases | fzf, delta, lazygit, eza |
 | curl installers | just, starship, atuin, zoxide, uv, bun |
+| uv tool | rumdl (markdown lint for TAD `check-all`) |
+| symlinks | CLI tools from `scripts/` → `~/.local/bin` (so non-interactive `just`/harness resolve them) |
+| playwright | chromium e2e system libs (TAD frontend) |
 | npm global | Codex CLI (`@openai/codex`, required by the `codex` plugin) |
 | native installer | Claude Code |
 
@@ -72,6 +75,10 @@ Then SSH in and clone + bootstrap:
 ssh dev
 git clone https://github.com/patforna/system.git ~/github/system
 ~/github/system/remote/bootstrap.sh
+# Unlock private/ (global CLAUDE.md, memory log, private skills/scripts). Copy the key over
+# first from an unlocked machine: git-crypt export-key /tmp/system.key && scp /tmp/system.key dev:~/system.key
+git-crypt unlock ~/system.key && shred -u ~/system.key
+# (re-run bootstrap.sh after unlocking to also symlink private/scripts onto PATH)
 exec zsh
 gh auth login
 claude login
