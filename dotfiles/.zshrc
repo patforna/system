@@ -14,7 +14,7 @@ setopt hist_ignore_dups   # no dupes
 setopt hist_reduce_blanks # trim extra spaces
 
 # --- Completion ---
-autoload -Uz compinit && compinit -C
+autoload -Uz compinit && compinit
 # Case-insensitive completion
 zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}'
 
