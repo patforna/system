@@ -46,7 +46,7 @@ Ubuntu 24.04, 4GB+ RAM, add your SSH key on creation.
 Write the droplet IP to your local SSH config:
 
 ```bash
-echo -e "Host dev\n  HostName <DROPLET_IP>" > ~/github/system/private/ssh-config.local
+echo -e "Host dev\n  HostName <DROPLET_IP>" > ~/.ssh/config.local
 ```
 
 The `dev` alias in `dotfiles/.ssh-config` uses `Include config.local` to pick this up.
@@ -103,7 +103,7 @@ The droplet bills hourly, so snapshot and destroy it when you're not using it. T
 
 **`dev-down`** — Shuts down the droplet, creates a snapshot (`dev-snapshot`), then destroys the droplet. Shows uptime and cost before tearing down.
 
-**`dev-up`** — Restores a new droplet from the snapshot, updates `private/ssh-config.local` with the new IP, deletes the snapshot, and clears the old SSH host key.
+**`dev-up`** — Restores a new droplet from the snapshot, updates `~/.ssh/config.local` with the new IP, deletes the snapshot, and clears the old SSH host key.
 
 ```bash
 dev-down   # done for the day — snapshot + destroy

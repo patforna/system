@@ -55,7 +55,7 @@ echo ""
 # --- SSH ---
 echo "--- SSH ---"
 link "${PUBLIC}/.ssh-config"                       "${HOME}/.ssh/config"
-link "${PRIVATE}/ssh-config.local"                 "${HOME}/.ssh/config.local"
+# ~/.ssh/config.local is untracked, local-only (dev droplet IP, written by dev-up)
 echo ""
 
 # --- XDG Config ---

@@ -230,7 +230,6 @@ check_link "${HOME}/.zshrc"                                                    "
 check_link "${HOME}/.tmux.conf"                                                "${DOTFILES}/.tmux.conf"
 check_link "${HOME}/.gitconfig"                                                "${DOTFILES}/.gitconfig"
 check_link "${HOME}/.ssh/config"                                               "${DOTFILES}/.ssh-config"
-check_link "${HOME}/.ssh/config.local"                                         "${PRIVATE}/ssh-config.local"
 check_link "${HOME}/.config/ghostty/config"                                    "${DOTFILES}/.config/ghostty/config"
 check_link "${HOME}/.config/nvim"                                              "${DOTFILES}/.config/nvim"
 check_link "${HOME}/.config/starship.toml"                                     "${DOTFILES}/.config/starship.toml"
@@ -555,19 +554,21 @@ fi
 section "Remote: SSH config"
 ssh_drift_count=${#DRIFT[@]}
 
-ssh_local="${PRIVATE}/ssh-config.local"
+ssh_local="${HOME}/.ssh/config.local"  # untracked, local-only; absent = no active droplet
 if [[ -f "$ssh_local" ]]; then
   if grep -q '<DROPLET_IP>' "$ssh_local"; then
     drift "SSH config has placeholder <DROPLET_IP>"
   elif ! grep -qE 'HostName [0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' "$ssh_local"; then
     drift "SSH config: Host dev has no valid IP"
   fi
-else
-  drift "SSH config: private/ssh-config.local not found"
 fi
 
 if [[ ${#DRIFT[@]} -eq $ssh_drift_count ]]; then
-  ok "SSH config has valid droplet IP"
+  if [[ -f "$ssh_local" ]]; then
+    ok "SSH config has valid droplet IP"
+  else
+    ok "SSH config: no active droplet (config.local absent)"
+  fi
 fi
 
 # --- Shell scripts (syntax) ---

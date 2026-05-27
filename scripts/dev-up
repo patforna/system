@@ -9,7 +9,7 @@ SNAPSHOT_NAME="dev-snapshot"
 REGION="lon1"
 SIZE="s-2vcpu-4gb"
 SSH_KEYS="2254142"             # your DO SSH key ID — find it: doctl compute ssh-key list
-SSH_CONFIG_LOCAL="$HOME/github/system/private/ssh-config.local"  # git-crypt encrypted
+SSH_CONFIG_LOCAL="$HOME/.ssh/config.local"  # untracked, local-only (Include'd by ~/.ssh/config)
 
 # --- Preflight ---
 if ! command -v doctl &>/dev/null; then
