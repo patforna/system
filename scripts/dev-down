@@ -25,30 +25,34 @@ echo "Droplet: $DROPLET_NAME (ID: $DROPLET_ID)"
 DROPLET_JSON=$(doctl compute droplet get "$DROPLET_ID" --output json)
 SIZE_SLUG=$(echo "$DROPLET_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['size_slug'])")
 
-# Use the 'create' action timestamp (when dev-up restored this instance),
-# not the droplet's created_at which can reflect stale snapshot metadata.
-CREATED_AT=$(doctl compute droplet actions "$DROPLET_ID" --output json \
-  | python3 -c "
-import sys, json
-actions = json.load(sys.stdin)
-create = next((a for a in actions if a['type'] == 'create'), None)
-print(create['started_at'] if create else '')
-")
-if [[ -z "$CREATED_AT" ]]; then
-  CREATED_AT=$(echo "$DROPLET_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['created_at'])")
-fi
+# Pick the most recent 'create' action's started_at (when dev-up restored this
+# instance). doctl returns droplet actions newest-first, so the first match is
+# the latest create. The ISO timestamp ends in 'Z' (UTC) and must be parsed as
+# such — `date -jf "...Z" ...` on macOS silently treats the string as local
+# time, which over-stated uptime by the local UTC offset (~2 h in CEST).
+export ACTIONS_JSON DROPLET_JSON HOURLY_RATE
+ACTIONS_JSON=$(doctl compute droplet actions "$DROPLET_ID" --output json)
 HOURLY_RATE=$(doctl compute size list --format Slug,PriceHourly --no-header | awk -v s="$SIZE_SLUG" '$1==s {print $2}')
 
-CREATED_EPOCH=$(date -jf "%Y-%m-%dT%H:%M:%SZ" "$CREATED_AT" +%s 2>/dev/null || date -d "$CREATED_AT" +%s)
-NOW_EPOCH=$(date +%s)
-UPTIME_SECS=$((NOW_EPOCH - CREATED_EPOCH))
-UPTIME_HOURS=$((UPTIME_SECS / 3600))
-UPTIME_MINS=$(( (UPTIME_SECS % 3600) / 60 ))
-COST=$(python3 -c "
-h, r = int('$UPTIME_HOURS'), float('$HOURLY_RATE')
-billable = h + 1
-print(f'{billable}h × \${r} = \${billable * r:.2f}')
-")
+IFS=$'\t' read -r UPTIME_HOURS UPTIME_MINS COST < <(python3 <<'PY'
+import json, os
+from datetime import datetime, timezone
+
+actions = json.loads(os.environ["ACTIONS_JSON"])
+fallback = json.loads(os.environ["DROPLET_JSON"])[0]["created_at"]
+create = next((a for a in actions if a["type"] == "create"), None)
+created_at = create["started_at"] if create else fallback
+
+created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+now = datetime.now(timezone.utc)
+secs = int((now - created).total_seconds())
+hours, mins = divmod(secs // 60, 60)
+
+rate = float(os.environ["HOURLY_RATE"])
+billable = hours + 1  # DO bills hourly, 1 h minimum, rounds up
+print(f"{hours}\t{mins}\t{billable}h × ${rate} = ${billable * rate:.2f}")
+PY
+)
 
 echo "Uptime:  ${UPTIME_HOURS}h ${UPTIME_MINS}m"
 echo "Cost:    $COST (billed hourly)"
