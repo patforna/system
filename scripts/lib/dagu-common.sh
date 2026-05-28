@@ -6,6 +6,7 @@ NOTIFY_EMAIL="${NOTIFY_EMAIL:-}"
 
 CLAUDE="${CLAUDE:-${HOME}/.local/bin/claude}"
 GWS="${GWS:-/opt/homebrew/bin/gws}"
+GH="${GH:-/opt/homebrew/bin/gh}"
 PYTHON3="${PYTHON3:-/usr/bin/python3}"
 
 # Fail-loud guard for scripts that cannot run without an address (digests).

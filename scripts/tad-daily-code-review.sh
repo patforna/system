@@ -15,8 +15,11 @@ set -uo pipefail
 # Overriding rule: review fatigue is the enemy. The default outcome is silence.
 # Only a Critical/Major finding that cannot be safely auto-fixed ever reaches
 # the human, as one focused email — the same escalation channel dagu-autofix.sh
-# already uses. Trivial Minor/Nit findings are auto-fixed on a standing branch
-# behind a check gate, with zero human contact. Everything else is dropped.
+# already uses. Trivial Minor/Nit findings are auto-fixed behind a check gate
+# and shipped via a GitHub PR that the script auto-rebase-merges (branch then
+# deleted); GitHub's built-in PR-merged emails are the audit surface. If the
+# ship-out path fails (push/PR/merge), the branch stays standing as a fallback
+# record and the run records `autofixed-merge-failed`. Everything else is dropped.
 #
 # Division of labour (deliberate):
 #   - The Claude session ONLY reviews, applies trivial autofixes behind the
@@ -38,8 +41,11 @@ set -uo pipefail
 #     The digest reads this file only for *Failed* runs, and a sweep run that
 #     escalates still exits Succeeded, so the extra fields have zero blast radius
 #     and the digest keeps showing the sweep as OK.
-#   - escalation: one gws gmail +send to NOTIFY_EMAIL, exactly like
-#     dagu-autofix.sh. NOTIFY_EMAIL unset = uniform mute (no send, no error).
+#   - escalation (Critical/Major): one gws gmail +send to NOTIFY_EMAIL, exactly
+#     like dagu-autofix.sh. NOTIFY_EMAIL unset = uniform mute (no send, no error).
+#   - autofix ship-out (Minor/Nit): `gh pr create` then `gh pr merge --rebase
+#     --delete-branch` against patforna/tad. GitHub's own PR-merged email is the
+#     human-visible audit trail. Failure leaves the standing branch as today.
 #
 # A genuine sweep *failure* (worktree creation broken, claude binary missing,
 # crash/timeout) is a normal DAG failure: exit non-zero so the inherited
@@ -185,11 +191,14 @@ echo "$bypass_list"
 
 # --- Prepare an isolated worktree. ------------------------------------------
 # Never mutate the primary working tree (tad-pipeline also runs at 03:00 in
-# the same repo). The branch is the autofix record and stays standing; the
-# worktree directory is just the mechanism and is removed at the end.
+# the same repo). The branch carries the autofix commit out to a GitHub PR and
+# is then deleted (locally + remote via `gh pr merge --delete-branch`); on
+# ship-out failure it stays standing as a fallback record. The worktree
+# directory is just the mechanism and is removed at the end.
 mkdir -p "$WT_ROOT"
 git -C "$TAD" worktree prune >/dev/null 2>&1 || true
-# Claim a dated branch + worktree (advisory record, never merged). `git worktree
+# Claim a dated branch + worktree (PR-merged then deleted, or retained as a
+# standing fallback record on ship-out failure). `git worktree
 # add -b` is the atomic claim — it fails if the branch OR the path already
 # exists — so retrying with an incrementing suffix is collision-free even across
 # concurrent same-day reruns, and never force-deletes a standing branch or
@@ -243,7 +252,7 @@ You are the TAD code-review sweep. Fresh context, today is $TODAY, run id $DAG_R
 Working directory: $WT (a git worktree on branch $AUTOFIX_BRANCH, created from main@${HEAD_SHA:0:12}). Do everything here. Never touch the primary worktree or main.
 
 # Overriding rule
-Review fatigue is the enemy. The default outcome is SILENCE. You do not summarise, you do not write reports, you do not send email, you do not open issues or PRs (there is no GitHub in this flow). Your ONLY durable output is the single JSON result file described in step 4.
+Review fatigue is the enemy. The default outcome is SILENCE. You do not summarise, you do not write reports, you do not send email, you do not push, you do not open issues or PRs (the calling script handles ship-out). Your ONLY durable output is the single JSON result file described in step 4.
 
 # Commits to review (these bypassed /auto-task) — there are ${#bypass_shas[@]} of them
 $bypass_list
@@ -293,6 +302,7 @@ fi
 # outcomes that must retry next run (send failed, or no parseable result).
 should_advance=1
 fail_dag=0          # set when a persistent unhandled run must fail for visibility
+merged=0            # set when the autofix branch was successfully PR-merged + remote-deleted
 outcome=""
 note=""
 fingerprint=""
@@ -346,8 +356,25 @@ else
     log "incomplete result (${reviewed:-0}/${expected}) — recording unhandled, marker NOT advanced$( ((fail_dag)) && echo ' (persistent → failing DAG)' )."
   elif (( n_find == 0 )); then
     if branch_has_commits; then
-      outcome="autofixed"
-      note="${autofix_note:-autofixed: fix committed, check green}"
+      # Ship the autofix: push, open a PR, rebase-merge it, delete the remote
+      # branch. GitHub's PR-merged email is the human-visible audit trail. On any
+      # failure here, fall back to today's behaviour (standing local branch, no
+      # merge) — the fix is not lost, it just doesn't reach main this cycle.
+      pr_url=""
+      pr_title="${autofix_note:-sweep autofix [$TODAY]}"
+      pr_body=$(printf 'Automated autofix from tad-daily-code-review sweep.\n\n- run: `%s`\n- range: `%s`\n- gate: `just check-all` passed locally before commit\n\nMerged automatically by the sweep script; see ~/github/system/scripts/tad-daily-code-review.sh.\n' "$DAG_RUN_ID" "$RANGE")
+      if git -C "$TAD" push -u origin "$AUTOFIX_BRANCH" >/dev/null 2>&1 \
+         && pr_url=$( ( cd "$TAD" && "$GH" pr create --base main --head "$AUTOFIX_BRANCH" --title "$pr_title" --body "$pr_body" ) 2>/dev/null) \
+         && ( cd "$TAD" && "$GH" pr merge "$pr_url" --rebase --delete-branch ) >/dev/null 2>&1; then
+        merged=1
+        outcome="autofixed"
+        note="${autofix_note:-autofixed: fix committed, check green} (PR ${pr_url})"
+        log "autofixed: PR ${pr_url} merged + branch deleted."
+      else
+        outcome="autofixed-merge-failed"
+        note="autofixed-merge-failed: fix on ${AUTOFIX_BRANCH}, not on main${pr_url:+; PR ${pr_url}}"
+        log "ship-out FAILED — standing branch ${AUTOFIX_BRANCH} retained as fallback${pr_url:+ (PR ${pr_url} unmerged)}."
+      fi
     else
       outcome="clean"
       note="clean: ${reviewed} bypass commit(s) reviewed, nothing to surface"
@@ -403,13 +430,16 @@ emit_row "$outcome" "$fingerprint" "$note" "$commit"
 rm -f "$RESULT_FILE"
 
 # --- Branch retention + worktree teardown. ---------------------------------
-# The branch stays standing iff the sweep left a real autofix commit on it
-# (never merged to main — it is only a record). Otherwise drop it.
-if branch_has_commits; then
+# Worktree always goes. Local branch:
+#   merged          -> delete (gh already deleted the remote via --delete-branch).
+#   has commits     -> retain (ship-out failed; standing branch is the fallback).
+#   no commits      -> delete (nothing to retain).
+git -C "$TAD" worktree remove --force "$WT" >/dev/null 2>&1 || true
+if (( merged )); then
+  git -C "$TAD" branch -D "$AUTOFIX_BRANCH" >/dev/null 2>&1 || true
+elif branch_has_commits; then
   log "autofix branch ${AUTOFIX_BRANCH} retained ($(git -C "$TAD" rev-list --count "${HEAD_SHA}..refs/heads/${AUTOFIX_BRANCH}") commit(s), not merged)."
-  git -C "$TAD" worktree remove --force "$WT" >/dev/null 2>&1 || true
 else
-  git -C "$TAD" worktree remove --force "$WT" >/dev/null 2>&1 || true
   git -C "$TAD" branch -D "$AUTOFIX_BRANCH" >/dev/null 2>&1 || true
 fi
 
