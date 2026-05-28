@@ -29,8 +29,15 @@ mkdir -p "$RETRY_DIR"
 DAGU="${DAGU:-/opt/homebrew/bin/dagu}"
 
 LOG_TAIL=""
+RETRY_COUNT=0
 if [[ -n "$LOG_FILE" && -r "$LOG_FILE" ]]; then
   LOG_TAIL=$(tail -100 "$LOG_FILE" 2>/dev/null || true)
+  # Count retries that fired and still failed. Each "Step execution failed;
+  # retrying" line in dagu's run log = one retry attempt. Dagu only invokes
+  # this handler after the configured retry_policy is exhausted, so RETRY_COUNT
+  # >= 1 means "retries were configured AND all failed on the same step" — the
+  # 'transient' hypothesis has already been tested and disproved.
+  RETRY_COUNT=$(grep -c 'Step execution failed; retrying' "$LOG_FILE" 2>/dev/null || echo 0)
 fi
 
 TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -75,6 +82,7 @@ You are the autofix handler for a failed dagu DAG run on Patric Mac. Today is $T
 - Log file: ${LOG_FILE:-(unavailable)}
 - DAG yaml: \$HOME/github/system/dagu/$DAG_NAME.yaml
 - Repo root for most fixes: \$HOME/github/system
+- Retries that fired and still failed: $RETRY_COUNT (dagu only calls this handler after the configured retry_policy is burned)
 
 # Last 100 lines of log
 
@@ -86,9 +94,24 @@ ${LOG_TAIL:-(no log content)}
 
 1. Investigate the root cause. Read the full log if needed, the DAG yaml, and any scripts it invokes.
 2. Classify the failure as one of:
-   - transient: network blip, rate limit, 5xx, anything that should resolve on the next scheduled run.
+   - transient: a one-off failure on a step with NO retry_policy, where the error pattern is a clear single blip (one timeout, one 5xx, one rate-limit hit) and "next scheduled run will pass" is a credible claim.
    - fixable: bug, drift, or config issue you can correct in local code.
-   - escalated: requires credentials, secrets, OAuth re-auth, or external account access you cannot resolve yourself.
+   - escalated: requires credentials, secrets, OAuth re-auth, external account access, or — importantly — a persistent external dependency that local code can't fix (e.g. an upstream API repeatedly timing out after the configured retries already burned through).
+
+   Before you may choose 'transient', run this accountability check:
+   - A failure that reaches this handler has already exhausted its configured retry_policy
+     — dagu does not invoke on_failure until retries are burned. Retries fired and failed
+     for this run: $RETRY_COUNT.
+   - If RETRY_COUNT >= 1, retries were configured and all failed on the same step.
+     'transient' hypothesises "the next run will pass" — those retries already tested
+     and disproved that hypothesis with 5+ minute gaps between attempts. Do NOT call it
+     transient. Pick 'fixable' (correct it in code — e.g. longer backoff, fallback source,
+     wider timeout in the calling pipeline) or 'escalated' (Patric's call; common when an
+     external API is persistently degraded and the right response is human judgement, not
+     another patch). If you escalate, your email body must say what the retry exhaustion
+     tells you (e.g. "3 attempts over 4h all hit the same nasdaq.com read timeout — not a
+     blip; either harden the Load step or wait it out").
+   - 'transient' is only acceptable when RETRY_COUNT == 0.
 
    Before you may choose 'fixable', run this accountability check:
    - The signal that matters is whether THIS SAME failure has been fixed
@@ -119,7 +142,8 @@ Where JSON is a one-line object with fields: ts ($TS), dag ($DAG_NAME), run_id (
 
 The note field is shown verbatim in Patric's daily digest as the only context for what happened. Format it as one short sentence (≤120 chars) of the form "<verb>: <what>" so it reads well alongside other rows. Examples:
   - "fixed: removed stray prose from DAG command (parsed as 4 positional args)"
-  - "transient: 503 from sheets API, next run should pass"
+  - "transient: single 503 from sheets API (step has no retry_policy)"
+  - "escalated: 3 attempts over 4h all hit nasdaq.com read timeout on Load — persistent upstream, not a blip"
   - "escalated: gmail OAuth token expired, needs re-auth via gws auth"
 
 The next daily digest reads this file to surface autofix outcomes. If you skip this, the digest will treat the failure as unhandled and bug Patric to investigate.
