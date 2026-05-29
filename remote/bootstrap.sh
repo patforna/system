@@ -264,6 +264,7 @@ link "$REPO_DIR/dotfiles/.config/nvim/init.lua"       "$HOME/.config/nvim/init.l
 link "$REPO_DIR/dotfiles/.config/nvim/lazy-lock.json" "$HOME/.config/nvim/lazy-lock.json"
 link "$REPO_DIR/dotfiles/.config/btop/btop.conf"      "$HOME/.config/btop/btop.conf"
 link "$REPO_DIR/dotfiles/.config/gh/config.yml"       "$HOME/.config/gh/config.yml"
+link "$REPO_DIR/dotfiles/.config/lazygit/config.yml"  "$HOME/.config/lazygit/config.yml"
 link "$REPO_DIR/dotfiles/.config/git/ignore"          "$HOME/.config/git/ignore"
 link "$REPO_DIR/dotfiles/.config/fd/config"           "$HOME/.config/fd/config"
 
