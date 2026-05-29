@@ -286,6 +286,7 @@ run_local_checks() {
   check_link "${HOME}/.config/atuin/config.toml"                                 "${DOTFILES}/.config/atuin/config.toml"
   check_link "${HOME}/.config/btop/btop.conf"                                    "${DOTFILES}/.config/btop/btop.conf"
   check_link "${HOME}/.config/gh/config.yml"                                     "${DOTFILES}/.config/gh/config.yml"
+  check_link "${HOME}/.config/lazygit/config.yml"                                "${DOTFILES}/.config/lazygit/config.yml"
   check_link "${HOME}/.config/git/ignore"                                        "${DOTFILES}/.config/git/ignore"
   check_link "${HOME}/.config/fd/config"                                         "${DOTFILES}/.config/fd/config"
   check_link "${HOME}/.config/gcloud/configurations/config_default"              "${DOTFILES}/.config/gcloud/configurations/config_default"
@@ -298,6 +299,7 @@ run_local_checks() {
   check_link "${HOME}/.claude/skills"                                              "${DOTFILES}/.claude/skills"
   check_link "${HOME}/Library/Application Support/Code/User/settings.json"       "${DOTFILES}/vscode-settings.json"
   check_link "${HOME}/Library/Application Support/Code/User/keybindings.json"    "${DOTFILES}/vscode-keybindings.json"
+  check_link "${HOME}/Library/Application Support/lazygit/config.yml"             "${DOTFILES}/.config/lazygit/config.yml"
   check_link "${HOME}/.config/dagu/dags"                                         "${HOME}/github/system/dagu"
   check_link "${HOME}/.config/dagu/base.yaml"                                    "${DOTFILES}/.config/dagu/base.yaml"
 

@@ -96,10 +96,11 @@ if [[ -d "${PUBLIC}/.claude/skills" ]]; then
 fi
 echo ""
 
-# --- VS Code ---
-echo "--- VS Code ---"
+# --- macOS app configs ---
+echo "--- macOS app configs ---"
 link "${PUBLIC}/vscode-settings.json"              "${HOME}/Library/Application Support/Code/User/settings.json"
 link "${PUBLIC}/vscode-keybindings.json"           "${HOME}/Library/Application Support/Code/User/keybindings.json"
+link "${PUBLIC}/.config/lazygit/config.yml"        "${HOME}/Library/Application Support/lazygit/config.yml"
 echo ""
 
 echo "=== Done ==="
