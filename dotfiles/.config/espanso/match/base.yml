@@ -1,4 +1,7 @@
 matches:
+  - trigger: ":ml"
+    replace: 'patric.fornasier@gmail.com'
+
   - trigger: ":cp"
     replace: "commit and push"
 
@@ -10,4 +13,3 @@ matches:
 
   - trigger: ":clip"
     replace: 'Output your response and also copy it into my clipboard'
-
