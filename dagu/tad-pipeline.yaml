@@ -1,4 +1,8 @@
-schedule: "0 3 * * 2-6"
+# 10:00 UTC (pinned, DST-proof). api.nasdaq.com (earnings client) is flaky in
+# the post-close hours; the old "0 3" fired ~02:00 UTC, where every failure and
+# every multi-hour run clustered. 10:00 UTC is a demonstrably healthy window.
+# Tue-Sat = post-trading-day. See private/GOTCHAS.md.
+schedule: "CRON_TZ=UTC 0 10 * * 2-6"
 
 steps:
   - name: tad-pipeline
