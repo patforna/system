@@ -258,7 +258,7 @@ Review fatigue is the enemy. The default outcome is SILENCE. You do not summaris
 $bypass_list
 
 # Steps
-1. For EACH commit above, run \`/code-review <sha>~1..<sha>\` (use the full sha). You are a different, fresh context — the code-review skill's authorship guard correctly does NOT fire; do the full review. Stay strictly in the code-review lane. Do NOT run any linter, test suite, or \`check-all\` as part of reviewing — the deterministic gate is a separate step (step 3) and the review must never duplicate it.
+1. For EACH commit above, run \`/review-code <sha>~1..<sha>\` (use the full sha). You are a different, fresh context — the review-code skill's authorship guard correctly does NOT fire; do the full review. Stay strictly in the code review lane. Do NOT run any linter, test suite, or \`check-all\` as part of reviewing — the deterministic gate is a separate step (step 3) and the review must never duplicate it.
 2. Route every finding by these rules and NOTHING else:
    - Minor or Nit AND it carries an \`Autofix:\` line: apply that exact edit in this worktree. (The skill emitted the fix; you, a separate step, apply it — reviewer is not fixer.)
    - Critical or Major: collect it for the result file. Do NOT fix it.
@@ -266,7 +266,7 @@ $bypass_list
 3. If and only if you applied at least one autofix: run \`$CHECK_CMD\` ONCE in $WT — this single run is the autofix safety gate, nothing else. If it passes: \`git add -A && git commit -m "sweep: autofix N Minor/Nit finding(s) [$TODAY]"\` (N = how many) and capture the commit sha with \`git rev-parse HEAD\`. If it fails: do NOT commit, discard the changes (\`git checkout -- . && git clean -fd\`) — the fix is dropped silently.
 4. Write your result as a SINGLE JSON object to $RESULT_FILE (overwrite it; this path is outside the worktree on purpose). Schema:
    {"reviewed": <int>, "autofix_commit": "<sha or empty string>", "autofix_count": <int>, "autofix_note": "<≤120-char 'autofixed: ...' sentence, or empty>", "findings": [{"severity": "Critical|Major", "file": "<repo-relative path>", "line": <int>, "issue": "<one line; no severity or file prefix>", "from": "<12-char sha of the commit it came from>"}]}
-   "reviewed" = the number of the ${#bypass_shas[@]} listed commits on which you actually COMPLETED a full /code-review. You must review all of them, so on a complete run reviewed = ${#bypass_shas[@]}. Only Critical/Major findings go in "findings". Use an empty array if there are none. Issue text: terse, British spelling, one line, no leading severity/path.
+   "reviewed" = the number of the ${#bypass_shas[@]} listed commits on which you actually COMPLETED a full /review-code. You must review all of them, so on a complete run reviewed = ${#bypass_shas[@]}. Only Critical/Major findings go in "findings". Use an empty array if there are none. Issue text: terse, British spelling, one line, no leading severity/path.
 
 # Notes
 - This JSON file is the only thing that matters. If you cannot finish reviewing every commit, STILL write the file with the findings you have so far, and set "reviewed" to the count you actually completed (NEVER inflate it) — a short count tells the sweep the range is incomplete so it retries next run rather than skipping the unreviewed commits. Never leave the file absent.
