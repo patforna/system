@@ -363,13 +363,20 @@ else
       pr_url=""
       pr_title="${autofix_note:-sweep autofix [$TODAY]}"
       pr_body=$(printf 'Automated autofix from tad-daily-code-review sweep.\n\n- run: `%s`\n- range: `%s`\n- gate: `just check-all` passed locally before commit\n\nMerged automatically by the sweep script; see ~/github/system/scripts/tad-daily-code-review.sh.\n' "$DAG_RUN_ID" "$RANGE")
+      # Attempt the rebase-merge, then VERIFY the PR's real state — never trust
+      # gh's exit code. A rebase-merge can land server-side while `gh pr merge`
+      # still exits non-zero (async merge / branch-delete race), which used to
+      # record a false "merge-failed" and strand the branch. We ask GitHub
+      # whether the PR is actually merged and reconcile to that.
       if git -C "$TAD" push -u origin "$AUTOFIX_BRANCH" >/dev/null 2>&1 \
-         && pr_url=$( ( cd "$TAD" && "$GH" pr create --base main --head "$AUTOFIX_BRANCH" --title "$pr_title" --body "$pr_body" ) 2>/dev/null) \
-         && ( cd "$TAD" && "$GH" pr merge "$pr_url" --rebase --delete-branch ) >/dev/null 2>&1; then
+         && pr_url=$( ( cd "$TAD" && "$GH" pr create --base main --head "$AUTOFIX_BRANCH" --title "$pr_title" --body "$pr_body" ) 2>/dev/null); then
+        ( cd "$TAD" && "$GH" pr merge "$pr_url" --rebase --delete-branch ) >/dev/null 2>&1 || true
+      fi
+      if [[ -n "$pr_url" && "$( ( cd "$TAD" && "$GH" pr view "$pr_url" --json state --jq .state ) 2>/dev/null)" == "MERGED" ]]; then
         merged=1
         outcome="autofixed"
         note="${autofix_note:-autofixed: fix committed, check green} (PR ${pr_url})"
-        log "autofixed: PR ${pr_url} merged + branch deleted."
+        log "autofixed: PR ${pr_url} merged."
       else
         outcome="autofixed-merge-failed"
         note="autofixed-merge-failed: fix on ${AUTOFIX_BRANCH}, not on main${pr_url:+; PR ${pr_url}}"
@@ -431,12 +438,14 @@ rm -f "$RESULT_FILE"
 
 # --- Branch retention + worktree teardown. ---------------------------------
 # Worktree always goes. Local branch:
-#   merged          -> delete (gh already deleted the remote via --delete-branch).
+#   merged          -> delete local + remote (don't rely on gh's --delete-branch:
+#                      it can no-op when the merge landed via the async/error race).
 #   has commits     -> retain (ship-out failed; standing branch is the fallback).
 #   no commits      -> delete (nothing to retain).
 git -C "$TAD" worktree remove --force "$WT" >/dev/null 2>&1 || true
 if (( merged )); then
   git -C "$TAD" branch -D "$AUTOFIX_BRANCH" >/dev/null 2>&1 || true
+  git -C "$TAD" push origin --delete "$AUTOFIX_BRANCH" >/dev/null 2>&1 || true
 elif branch_has_commits; then
   log "autofix branch ${AUTOFIX_BRANCH} retained ($(git -C "$TAD" rev-list --count "${HEAD_SHA}..refs/heads/${AUTOFIX_BRANCH}") commit(s), not merged)."
 else
