@@ -1,8 +1,9 @@
-# 10:00 UTC (pinned, DST-proof). api.nasdaq.com (earnings client) is flaky in
-# the post-close hours; the old "0 3" fired ~02:00 UTC, where every failure and
-# every multi-hour run clustered. 10:00 UTC is a demonstrably healthy window.
+# 04:30 UTC (pinned, DST-proof) — done before Patric's ~07:00 Zurich start
+# (06:32 CEST / 05:32 CET) with margin for the 2×300s retries. api.nasdaq.com
+# (earnings client) is flaky in the ~02:00 UTC post-close window; this sits 2.5h
+# clear of it, and the earnings-client retry hardening (tad) is the real net.
 # Tue-Sat = post-trading-day. See private/GOTCHAS.md.
-schedule: "CRON_TZ=UTC 0 10 * * 2-6"
+schedule: "CRON_TZ=UTC 30 4 * * 2-6"
 
 steps:
   - name: tad-pipeline
