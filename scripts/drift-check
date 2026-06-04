@@ -68,6 +68,10 @@ NOTIFY_CONF="${HOME}/github/system/private/droplet-watchdog.conf"
 [[ -f "$NOTIFY_CONF" ]] && source "$NOTIFY_CONF"
 NOTIFY_EMAIL="${NOTIFY_EMAIL:-}"
 GWS="${GWS:-/opt/homebrew/bin/gws}"
+# Dedup state for --notify: fingerprint of the last-emailed drift set. Lets a
+# steady-state un-reconciled item nudge ONCE instead of every day (see the
+# --notify block at the foot of the file).
+DRIFT_STATE_FILE="${HOME}/.local/state/drift-notify-$(hostname -s 2>/dev/null || hostname).sha"
 
 # --- Helpers ---
 
@@ -697,6 +701,9 @@ echo "=============================="
 
 if [[ ${#DRIFT[@]} -eq 0 ]]; then
   echo "No drift detected."
+  # Clear the notify fingerprint so a later recurrence of the same item pages
+  # again (a resolved-then-returned item is genuinely new).
+  [[ "$NOTIFY" == 1 ]] && rm -f "$DRIFT_STATE_FILE"
   exit 0
 fi
 
@@ -710,7 +717,18 @@ done
 # dagu failure handler / autofix does NOT fire. Untracked local state is a
 # reconciliation decision for a human, not something to auto-commit at 3am.
 if [[ "$NOTIFY" == 1 ]]; then
-  send_drift_email "${#DRIFT[@]}" "${DRIFT[@]}"
+  # Dedup: email only when the drift SET changes. A steady-state un-reconciled
+  # item (e.g. an extension Patric means to keep but hasn't tracked yet) must
+  # not nag daily — fingerprint the sorted list and skip the send when it
+  # matches the last notification. New/changed drift notifies once; a cleared
+  # set resets the fingerprint above so a later recurrence pages again.
+  drift_fp=$(printf '%s\n' "${DRIFT[@]}" | sort | shasum -a 1 | awk '{print $1}')
+  if [[ "$drift_fp" != "$(cat "$DRIFT_STATE_FILE" 2>/dev/null)" ]]; then
+    send_drift_email "${#DRIFT[@]}" "${DRIFT[@]}"
+    mkdir -p "$(dirname "$DRIFT_STATE_FILE")" && printf '%s\n' "$drift_fp" > "$DRIFT_STATE_FILE"
+  else
+    echo "(drift unchanged since last notification — email suppressed)"
+  fi
   exit 0
 fi
 
