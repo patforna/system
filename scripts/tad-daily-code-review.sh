@@ -191,10 +191,12 @@ echo "$bypass_list"
 
 # --- Prepare an isolated worktree. ------------------------------------------
 # Never mutate the primary working tree (tad-pipeline also runs at 03:00 in
-# the same repo). The branch carries the autofix commit out to a GitHub PR and
-# is then deleted (locally + remote via `gh pr merge --delete-branch`); on
-# ship-out failure it stays standing as a fallback record. The worktree
-# directory is just the mechanism and is removed at the end.
+# the same repo). The branch carries the agent's commit(s) out to GitHub: a
+# pure Minor/Nit autofix is opened as a PR and auto-merged then deleted; a
+# branch carrying a Critical/Major fix is opened as a REVIEW PR and retained
+# for Patric to merge (escalated-pr); on ship-out failure it stays standing as
+# a fallback record. The worktree directory is just the mechanism and is
+# removed at the end.
 mkdir -p "$WT_ROOT"
 git -C "$TAD" worktree prune >/dev/null 2>&1 || true
 # Claim a dated branch + worktree (PR-merged then deleted, or retained as a
@@ -261,11 +263,11 @@ $bypass_list
 1. For EACH commit above, run \`/review-code <sha>~1..<sha>\` (use the full sha). You are a different, fresh context — the review-code skill's authorship guard correctly does NOT fire; do the full review. Stay strictly in the code review lane. Do NOT run any linter, test suite, or \`check-all\` as part of reviewing — the deterministic gate is a separate step (step 3) and the review must never duplicate it.
 2. Route every finding by these rules and NOTHING else:
    - Minor or Nit AND it carries an \`Autofix:\` line: apply that exact edit in this worktree. (The skill emitted the fix; you, a separate step, apply it — reviewer is not fixer.)
-   - Critical or Major: collect it for the result file. Do NOT fix it.
+   - Critical or Major: ALWAYS record it in the result file (step 4). ADDITIONALLY apply a fix in this worktree if — and ONLY if — the fix is small, mechanical, and high-confidence: the kind a human merges after a 30-second diff read (e.g. a clear off-by-one, a wrong flag, a NUL-unsafe shell idiom, a typo'd identifier). If the fix is large, speculative, touches design, or needs human judgement, record the finding ONLY and leave the code untouched. Set each finding's "fixed" field to true iff you applied a fix for it.
    - Anything else (Minor/Nit without an Autofix line, below-threshold, speculative): DROP it silently.
-3. If and only if you applied at least one autofix: run \`$CHECK_CMD\` ONCE in $WT — this single run is the autofix safety gate, nothing else. If it passes: \`git add -A && git commit -m "sweep: autofix N Minor/Nit finding(s) [$TODAY]"\` (N = how many) and capture the commit sha with \`git rev-parse HEAD\`. If it fails: do NOT commit, discard the changes (\`git checkout -- . && git clean -fd\`) — the fix is dropped silently.
+3. If and only if you applied at least one edit in step 2 (a Minor/Nit autofix and/or a Critical/Major fix): run \`$CHECK_CMD\` ONCE in $WT — this single run is the safety gate, nothing else. If it passes: \`git add -A && git commit -m "sweep: N autofix + M blocker-fix [$TODAY]"\` (N, M = how many of each) and capture the commit sha with \`git rev-parse HEAD\`. If it fails: do NOT commit, discard ALL changes (\`git checkout -- . && git clean -fd\`) — every fix this run is dropped (set every "fixed" back to false; the Critical/Major findings are still recorded and ship without a fix).
 4. Write your result as a SINGLE JSON object to $RESULT_FILE (overwrite it; this path is outside the worktree on purpose). Schema:
-   {"reviewed": <int>, "autofix_commit": "<sha or empty string>", "autofix_count": <int>, "autofix_note": "<≤120-char 'autofixed: ...' sentence, or empty>", "findings": [{"severity": "Critical|Major", "file": "<repo-relative path>", "line": <int>, "issue": "<one line; no severity or file prefix>", "from": "<12-char sha of the commit it came from>"}]}
+   {"reviewed": <int>, "autofix_commit": "<sha or empty string>", "autofix_count": <int>, "autofix_note": "<≤120-char 'autofixed: ...' sentence, or empty>", "findings": [{"severity": "Critical|Major", "file": "<repo-relative path>", "line": <int>, "issue": "<one line; no severity or file prefix>", "from": "<12-char sha of the commit it came from>", "fixed": <true if you applied a fix for it in step 2 and the gate passed, else false>}]}
    "reviewed" = the number of the ${#bypass_shas[@]} listed commits on which you actually COMPLETED a full /review-code. You must review all of them, so on a complete run reviewed = ${#bypass_shas[@]}. Only Critical/Major findings go in "findings". Use an empty array if there are none. Issue text: terse, British spelling, one line, no leading severity/path.
 
 # Notes
@@ -324,6 +326,7 @@ RESULT_SCHEMA='
       and (.issue|type=="string") and (.issue|length>0)
       and (.from|type=="string") and (.from|length>0)
       and (.line|type=="number")
+      and ((.fixed == null) or (.fixed|type=="boolean"))
   ))'
 if ! jq -e "$RESULT_SCHEMA" "$RESULT_FILE" >/dev/null 2>&1; then
   # The session exited 0 but left a missing or malformed result. Treat as
@@ -387,20 +390,50 @@ else
       note="clean: ${reviewed} bypass commit(s) reviewed, nothing to surface"
     fi
   else
-    # At least one Critical/Major. Build the human email body (file:line + source
-    # commit) and the dedup fingerprint (sha1 over the sorted, normalised set of
-    # severity|file|issue — deliberately NO line numbers, which drift).
-    body=$(jq -r '.findings[] | "\(.severity) \(.file):\(.line) — \(.issue) (from \(.from))"' "$RESULT_FILE")
+    # At least one Critical/Major. Build the finding list (file:line + source
+    # commit + whether a fix was proposed) and the dedup fingerprint (sha1 over
+    # the sorted, normalised severity|file|issue — deliberately NO line numbers,
+    # which drift).
+    body=$(jq -r '.findings[] | "\(.severity) \(.file):\(.line) — \(.issue) (from \(.from))" + (if .fixed then "  [fix proposed]" else "  [needs your judgement — no fix]" end)' "$RESULT_FILE")
     fingerprint=$(jq -r '.findings[] | ("\(.severity)|\(.file)|\(.issue)" | ascii_downcase | gsub("\\s+"; " ") | gsub("(^ )|( $)"; ""))' "$RESULT_FILE" \
       | sort -u | shasum -a 1 | awk '{print $1}')
     fp8="${fingerprint:0:8}"
 
+    # PR route (preferred when the agent landed a fix): open a REVIEW PR — never
+    # auto-merged — so Patric reviews the diff and merges. Replaces the prose
+    # escalation email for fixable blockers: actionable, one-click, low-noise.
+    # The branch carries the fix(es); the email path below is the fallback when
+    # there is nothing to review (no commit) or the PR open fails (finding never
+    # lost). The PR is a durable record, so a notify-send failure here is non-fatal.
+    pr_opened=0
+    if branch_has_commits; then
+      pr_url=""
+      n_fixed=$(jq '[.findings[] | select(.fixed==true)] | length' "$RESULT_FILE")
+      pr_title="sweep: ${n_find} blocker(s) for review — ${n_fixed} with a proposed fix [$TODAY]"
+      pr_body=$(printf 'Automated code-review sweep flagged %s Critical/Major finding(s) in `%s`; %s carry a proposed fix on this branch.\n\nReview the diff and merge if sound. Findings marked `[needs your judgement — no fix]` still need your hands.\n\n**DO NOT blind-merge** — these fixes are auto-proposed by an unattended sweep and gated only by `just check-all`.\n\nFindings:\n%s\n\n- run: `%s`\n- range: `%s`\n- gate: `just check-all` passed locally before commit\n\nsee ~/github/system/scripts/tad-daily-code-review.sh\n' "$n_find" "$RANGE" "$n_fixed" "$body" "$DAG_RUN_ID" "$RANGE")
+      if git -C "$TAD" push -u origin "$AUTOFIX_BRANCH" >/dev/null 2>&1 \
+         && pr_url=$( ( cd "$TAD" && "$GH" pr create --base main --head "$AUTOFIX_BRANCH" --title "$pr_title" --body "$pr_body" ) 2>/dev/null); then
+        pr_opened=1
+        outcome="escalated-pr"
+        note="escalated-pr: ${n_find} blocker(s), ${n_fixed} fix(es) proposed — review ${pr_url} (fp ${fp8})"
+        log "escalated-pr: opened review PR ${pr_url} (${n_find} blocker(s), ${n_fixed} with a fix)."
+        # One-line pointer email (best-effort; PR is the durable record).
+        [[ -n "$NOTIFY_EMAIL" ]] && "$GWS" gmail +send --to "$NOTIFY_EMAIL" \
+          --subject "[TAD SWEEP] review PR — ${RANGE}" \
+          --body "${n_find} blocker(s), ${n_fixed} with a proposed fix. Review + merge: ${pr_url}"$'\n\n'"${body}" >/dev/null 2>&1 || true
+      else
+        log "review-PR open FAILED (push or PR create) — falling back to email escalation."
+      fi
+    fi
+
     SEVEN_DAYS_AGO=$(date -u -v-7d +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '-7 days' +%Y-%m-%dT%H:%M:%SZ)
     prior=$(jq -r --arg fp "$fingerprint" --arg since "$SEVEN_DAYS_AGO" \
-      'select(.dag=="tad-daily-code-review" and .outcome=="escalated" and .fingerprint==$fp and .ts>=$since) | .ts' \
+      'select(.dag=="tad-daily-code-review" and (.outcome=="escalated" or .outcome=="escalated-pr") and .fingerprint==$fp and .ts>=$since) | .ts' \
       "$STATE_FILE" 2>/dev/null | head -1)
 
-    if [[ -n "$prior" ]]; then
+    if (( pr_opened )); then
+      : # handled above — PR is the escalation; skip the email path
+    elif [[ -n "$prior" ]]; then
       # Same blocker was delivered within 7 days — guards a rolled-back marker
       # from re-paging. Skip the send, record, advance.
       outcome="escalated-suppressed"
@@ -440,14 +473,16 @@ rm -f "$RESULT_FILE"
 # Worktree always goes. Local branch:
 #   merged          -> delete local + remote (don't rely on gh's --delete-branch:
 #                      it can no-op when the merge landed via the async/error race).
-#   has commits     -> retain (ship-out failed; standing branch is the fallback).
+#   has commits     -> retain. Either a review PR is open against this branch
+#                      (escalated-pr — Patric merges it), or ship-out failed and
+#                      it's a standing fallback record. Remote stays for the PR.
 #   no commits      -> delete (nothing to retain).
 git -C "$TAD" worktree remove --force "$WT" >/dev/null 2>&1 || true
 if (( merged )); then
   git -C "$TAD" branch -D "$AUTOFIX_BRANCH" >/dev/null 2>&1 || true
   git -C "$TAD" push origin --delete "$AUTOFIX_BRANCH" >/dev/null 2>&1 || true
 elif branch_has_commits; then
-  log "autofix branch ${AUTOFIX_BRANCH} retained ($(git -C "$TAD" rev-list --count "${HEAD_SHA}..refs/heads/${AUTOFIX_BRANCH}") commit(s), not merged)."
+  log "branch ${AUTOFIX_BRANCH} retained ($(git -C "$TAD" rev-list --count "${HEAD_SHA}..refs/heads/${AUTOFIX_BRANCH}") commit(s), not merged — open review PR or ship-out fallback)."
 else
   git -C "$TAD" branch -D "$AUTOFIX_BRANCH" >/dev/null 2>&1 || true
 fi
