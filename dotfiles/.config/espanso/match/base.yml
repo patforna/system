@@ -13,3 +13,6 @@ matches:
 
   - trigger: ":clip"
     replace: 'Output your response and also copy it into my clipboard'
+
+  - trigger: ":ask"
+    replace: 'If (and only if) you have questsions, use the AskUserTool (multiple times, if necessary)'
