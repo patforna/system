@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -36,8 +37,9 @@ PROJECTS_DIR = Path.home() / ".claude" / "projects"
 
 
 def encode_project_path(path: Path) -> str:
-    """Mirror Claude Code's project-dir encoding: replace / with -."""
-    return str(path).replace("/", "-")
+    """Mirror Claude Code's project-dir encoding: every non-alphanumeric
+    character (incl. '/', '.', '_', ' ') becomes '-'."""
+    return re.sub(r"[^A-Za-z0-9-]", "-", str(path))
 
 
 def resolve_project_root(explicit: str | None) -> Path:
@@ -504,14 +506,15 @@ def cmd_list(project_root: Path) -> int:
     if not sessions:
         print(f"no sessions for {project_root} in {PROJECTS_DIR}")
         return 0
+    canonical = PROJECTS_DIR / encode_project_path(project_root)
     for s in sessions:
         records = load_records(s)
         meta = session_metadata(records)
         ts = meta.get("started") or "?"
         title = meta.get("title") or "(no title)"
-        # Mark worktree sessions so users can tell them apart.
-        canonical = PROJECTS_DIR / encode_project_path(project_root)
-        marker = "" if s.parent == canonical or s.parent.name == "subagents" and s.parent.parent.parent == canonical else "  [worktree]"
+        # Mark worktree sessions so users can tell them apart. (list_sessions
+        # only yields files directly under project dirs, so no subagent case.)
+        marker = "" if s.parent == canonical else "  [worktree]"
         print(f"{s.stem}  {ts}  {title}{marker}")
     return 0
 

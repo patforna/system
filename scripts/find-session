@@ -97,7 +97,10 @@ case "$SCOPE" in
             echo "--repo requires being inside a git repo" >&2
             exit 1
         }
-        SLUG="${REPO_ROOT//\//-}"
+        # Claude Code replaces every non-alphanumeric char (incl. '.' and '_')
+        # with '-', not just slashes — e.g. ~/github/.worktrees/... encodes as
+        # -Users-...-github--worktrees-...
+        SLUG=$(printf '%s' "$REPO_ROOT" | sed 's/[^A-Za-z0-9-]/-/g')
         SEARCH_ROOT="$PROJECTS_DIR/$SLUG"
         [[ -d "$SEARCH_ROOT" ]] || { echo "no Claude sessions for this repo" >&2; exit 1; } ;;
 esac
@@ -149,7 +152,10 @@ print_session() {
 # ==========================================================================
 if [[ "$MODE" == "hash" ]]; then
     HASH="$QUERY"
-    COMMIT_TIME=$(git show -s --format=%aI "$HASH" 2>/dev/null || true)
+    # UTC Z-format to match the session JSONL timestamps — %aI carries the
+    # local offset, and the lexical `>` comparisons below are only sound when
+    # both sides share the same timezone representation.
+    COMMIT_TIME=$(TZ=UTC git show -s --date=format-local:'%Y-%m-%dT%H:%M:%SZ' --format=%ad "$HASH" 2>/dev/null || true)
 
     SIG_PATTERN="\[[A-Za-z0-9/_.-]+ ${HASH}[0-9a-f]*\]"
     SIG_MATCHES=$(rg -l --no-messages -- "$SIG_PATTERN" "$SEARCH_ROOT" 2>/dev/null || true)
