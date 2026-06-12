@@ -24,11 +24,12 @@ The `dev-up` and `dev-down` scripts for managing the droplet lifecycle live in `
 
 | Method | Tools |
 |---|---|
-| apt | zsh, tmux, neovim, git, ripgrep, bat, fd, btop, jq, build-essential, zsh-autosuggestions, zsh-syntax-highlighting, git-crypt |
+| apt | zsh, tmux, neovim, git, ripgrep, bat, fd, btop, jq, curl, unzip, build-essential, zsh-autosuggestions, zsh-syntax-highlighting, shellcheck, figlet, git-crypt |
 | nodesource apt | Node.js 22 (Claude Code plugins) |
 | GitHub apt repo | gh |
-| GitHub releases | fzf, delta, lazygit, eza |
+| GitHub releases | actionlint, fzf, delta, lazygit, eza, stylua |
 | curl installers | just, starship, atuin, zoxide, uv, bun |
+| git clone | TPM (tmux plugin manager) + plugins |
 | uv tool | rumdl (markdown lint for TAD `check-all`) |
 | symlinks | CLI tools from `scripts/` → `~/.local/bin` (so non-interactive `just`/harness resolve them) |
 | playwright | chromium e2e system libs (TAD frontend) |

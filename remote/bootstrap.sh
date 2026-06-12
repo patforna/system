@@ -130,7 +130,11 @@ fi
 
 if ! command -v just &>/dev/null; then
   echo "  GET   just"
-  curl -sSfL https://just.systems/install.sh | bash -s -- --to /usr/local/bin > /dev/null 2>&1
+  # ~/.local/bin, not /usr/local/bin: the just installer does a plain cp with
+  # no sudo elevation, so a root-owned target dir kills the whole bootstrap
+  # (set -e) with the output discarded.
+  mkdir -p "$HOME/.local/bin"
+  curl -sSfL https://just.systems/install.sh | bash -s -- --to "$HOME/.local/bin" > /dev/null 2>&1
 else
   echo "  SKIP  just"
 fi
@@ -212,9 +216,11 @@ echo ""
 # without them e2e dies with `libatk-1.0.so.0`. install-deps apt-installs the set.
 echo "--- Playwright deps ---"
 if command -v bun &>/dev/null; then
-  sudo env "PATH=$PATH" DEBIAN_FRONTEND=noninteractive bunx playwright install-deps chromium > /dev/null 2>&1 \
+  # `bun x`, not `bunx`: the bun installer creates no bunx entrypoint and only
+  # `bun` is symlinked into ~/.local/bin above, so bunx never resolves here.
+  sudo env "PATH=$PATH" DEBIAN_FRONTEND=noninteractive bun x playwright install-deps chromium > /dev/null 2>&1 \
     && echo "  OK    playwright chromium deps" \
-    || echo "  WARN  playwright install-deps failed — run 'sudo bunx playwright install-deps chromium'"
+    || echo "  WARN  playwright install-deps failed — run 'sudo env \"PATH=\$PATH\" bun x playwright install-deps chromium'"
 else
   echo "  SKIP  playwright deps (bun missing)"
 fi
