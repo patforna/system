@@ -26,6 +26,15 @@ DATE=$(date '+%Y-%m-%d')
   echo "fetch failed" >&2; exit 1;
 }
 
+# A genuinely quiet week is possible (~18 msgs is the norm), but zero means
+# the Gmail filter or label broke — fail into the autofix path rather than
+# email a hollow digest.
+count=$(jq length "$DATA_FILE")
+if (( count == 0 )); then
+  echo "0 messages fetched — jobs filter/label likely broken" >&2
+  exit 1
+fi
+
 # 2. Vet, validate, compose
 PROMPT_FILE="$SCRIPT_DIR/jobs-digest/prompt.md"
 [[ -f "$PROMPT_FILE" ]] || { echo "missing $PROMPT_FILE" >&2; exit 1; }
@@ -40,6 +49,13 @@ run_claude "$prompt" 2>&1 | tee /tmp/jobs-digest.log
 
 if [[ ! -s "$HTML_FILE" ]]; then
   echo "jobs digest: $HTML_FILE missing or empty — not sending" >&2
+  exit 1
+fi
+
+# Non-empty isn't enough: a refusal, apology, or fenced-markdown render would
+# otherwise be emailed as-is. Require the bucket headings and the footnote.
+if ! grep -qi "<h2" "$HTML_FILE" || ! grep -qi "footnote" "$HTML_FILE"; then
+  echo "jobs digest: HTML fails sanity check (no <h2>/Footnote) — not sending" >&2
   exit 1
 fi
 
