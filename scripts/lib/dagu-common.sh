@@ -17,7 +17,7 @@ require_notify_email() {
 # Single chokepoint for the headless-claude invocation (model id + flags live
 # in ONE place). Caller wraps cd/tee/redirection around it as today.
 run_claude() {
-  "$CLAUDE" -p --permission-mode bypassPermissions --model claude-opus-4-7 "$@"
+  "$CLAUDE" -p --permission-mode bypassPermissions --model claude-opus-4-8 "$@"
 }
 
 # Append a fallback JSONL line iff claude never recorded one for this run.
