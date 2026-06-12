@@ -1,5 +1,10 @@
 schedule: "0 3 * * 6"
 
+# Bound the run defensively — a healthy run is minutes; this caps a hung
+# claude render. Genuine failures fall through to the inherited
+# handler_on.failure (dagu-autofix.sh) like every other DAG.
+timeout_sec: 5400
+
 steps:
   - name: jobs-digest
     command: bash "${HOME}/github/system/scripts/jobs-digest.sh"
