@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+BASE_YML="$HOME/github/system/dotfiles/.config/espanso/match/base.yml"
+
+if [[ "${1:-}" == --o* || "${1:-}" == -o ]]; then
+  ${EDITOR:-nvim} "$BASE_YML"
+  exit 0
+fi
+
+echo "$BASE_YML"
+echo
+grep -E "trigger:|replace:" "$BASE_YML" \
+  | paste - - \
+  | sed "s|.*trigger: ||; s|    replace: | → |; s|['\"]||g"

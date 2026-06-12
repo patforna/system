@@ -63,6 +63,10 @@ alias vim='nvim'
 alias lg='lazygit'
 alias md='macdown'
 
+# espanso
+alias ea='espanso-add'
+alias es='espanso-show'
+
 # eza
 alias ls="eza --group-directories-first --icons"
 alias la="eza -la --group-directories-first --icons"

@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Add an espanso shortcut and reload the config.
+# Usage: espanso-add <trigger> <replacement>
+
+set -euo pipefail
+
+BASE_YML="$HOME/github/system/dotfiles/.config/espanso/match/base.yml"
+
+usage() {
+  echo "Usage: espanso-add <trigger> <replacement>"
+  exit 1
+}
+
+if [[ $# -eq 2 ]]; then
+  trigger="$1"
+  replacement="$2"
+else
+  usage
+fi
+
+[[ "$trigger" != :* ]] && trigger=":$trigger"
+
+# Bail if trigger already exists
+if grep -qF "trigger: \"$trigger\"" "$BASE_YML" || grep -qF "trigger: '$trigger'" "$BASE_YML"; then
+  echo "Error: trigger '$trigger' already exists in base.yml"
+  exit 1
+fi
+
+# Escape for YAML double-quoted string
+escaped="${replacement//\\/\\\\}"
+escaped="${escaped//\"/\\\"}"
+
+printf '\n  - trigger: "%s"\n    replace: "%s"\n' "$trigger" "$escaped" >> "$BASE_YML"
+
+echo "Added: $trigger → $replacement"
+
+# Commit and push (system repo convention)
+cd "$HOME/github/system"
+git add dotfiles/.config/espanso/match/base.yml
+git commit -m "espanso: add $trigger shortcut"
+git push
+
+# Reload espanso
+espanso restart
+echo "Espanso reloaded."
