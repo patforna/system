@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Schedule a daily macOS wake at 03:00 so dagu's 3 AM crons (tad-pipeline,
-# msgvault-sync, drift-check) fire even when the laptop lid is closed.
-# 3 AM lands after US market data fully settles in Massive (8 PM ET / 2 AM CET),
-# so the TAD pipeline gets the prior trading day's complete OHLCV.
+# Schedule a daily macOS wake at 03:00 so dagu's 3 AM crons (msgvault-sync,
+# tad-daily-code-review daily; jobs/tech-news digests Sat; drift-check Mon)
+# fire even when the laptop lid is closed.
 #
-# Pairs with `catchup_window: "24h"` in dotfiles/.config/dagu/base.yaml: any
-# scheduled runs missed during sleep get replayed when the system next wakes.
+# NOT covered: tad-pipeline, which moved to 04:30 UTC (06:30 CEST, Tue–Sat) —
+# it relies on the machine being awake by then, falling back to the
+# `catchup_window: "24h"` in dotfiles/.config/dagu/base.yaml, which replays
+# runs missed during sleep when the system next wakes (pmset supports only
+# one repeat schedule, so a second wake slot is not an option).
 #
 # pmset only supports one repeat schedule at a time. Re-running this is safe —
 # it overwrites the existing schedule. Persists across reboots (stored in NVRAM).

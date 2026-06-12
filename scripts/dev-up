@@ -43,7 +43,11 @@ else
   echo ""
   echo "⚠️  Remote config drift — remote/ differs from your Mac dotfiles:"
   echo "$drift_out" | sed -n 's/^  - /     - /p'
-  echo "  The droplet will provision remote/ as-is. Ctrl-C to fix on the Mac first, or continue."
+  echo "  The droplet will provision remote/ as-is."
+  # Only pause when a human is attached — non-interactive callers proceed.
+  if [[ -t 0 ]]; then
+    read -r -p "  Enter to continue, Ctrl-C to fix on the Mac first... "
+  fi
   echo ""
 fi
 

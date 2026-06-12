@@ -34,7 +34,11 @@ export ACTIONS_JSON DROPLET_JSON HOURLY_RATE
 ACTIONS_JSON=$(doctl compute droplet actions "$DROPLET_ID" --output json)
 HOURLY_RATE=$(doctl compute size list --format Slug,PriceHourly --no-header | awk -v s="$SIZE_SLUG" '$1==s {print $2}')
 
-IFS=$'\t' read -r UPTIME_HOURS UPTIME_MINS COST < <(python3 <<'PY'
+# Non-fatal: this block is purely cosmetic, and under set -e a failure here
+# (e.g. HOURLY_RATE empty because the size slug vanished from `doctl size
+# list`) must not abort the script before the snapshot/destroy — the one job
+# that actually stops billing.
+if ! IFS=$'\t' read -r UPTIME_HOURS UPTIME_MINS COST < <(python3 <<'PY'
 import json, os
 from datetime import datetime, timezone
 
@@ -52,7 +56,9 @@ rate = float(os.environ["HOURLY_RATE"])
 billable = hours + 1  # DO bills hourly, 1 h minimum, rounds up
 print(f"{hours}\t{mins}\t{billable}h × ${rate} = ${billable * rate:.2f}")
 PY
-)
+); then
+  UPTIME_HOURS="?" UPTIME_MINS="?" COST="(unavailable)"
+fi
 
 echo "Uptime:  ${UPTIME_HOURS}h ${UPTIME_MINS}m"
 echo "Cost:    $COST (billed hourly)"
