@@ -1,6 +1,6 @@
 [user]
 	name = Patric Fornasier
-	email = the configured Gmail account
+	email = patric.fornasier@gmail.com
 
 [pull]
 	rebase = true
