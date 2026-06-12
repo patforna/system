@@ -22,3 +22,6 @@ matches:
 
   - trigger: ":cms"
     replace: "/model sonnet"
+
+  - trigger: ":cmo"
+    replace: "/model opus"
