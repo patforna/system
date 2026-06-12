@@ -25,3 +25,6 @@ matches:
 
   - trigger: ":cmo"
     replace: "/model opus"
+
+  - trigger: ":cmf"
+    replace: "/model fable"
