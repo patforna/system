@@ -16,3 +16,6 @@ matches:
 
   - trigger: ":ask"
     replace: 'If (and only if) you have questions, use the AskUserQuestion tool (multiple times, if necessary)'
+
+  - trigger: ":ukm"
+    replace: "07828268073"
