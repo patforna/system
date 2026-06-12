@@ -19,3 +19,6 @@ matches:
 
   - trigger: ":ukm"
     replace: "07828268073"
+
+  - trigger: ":cms"
+    replace: "/model sonnet"
