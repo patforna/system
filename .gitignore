@@ -7,6 +7,9 @@ dagu/souls/
 dagu/memory/
 dagu/docs/
 
+# rumdl cache
+.rumdl_cache/
+
 # Claude Code local artifacts
 .claude/settings.local.json
 .claude/scheduled_tasks.lock

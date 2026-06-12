@@ -190,8 +190,9 @@ log "${#bypass_shas[@]} bypass commit(s) to review in ${RANGE}:"
 echo "$bypass_list"
 
 # --- Prepare an isolated worktree. ------------------------------------------
-# Never mutate the primary working tree (tad-pipeline also runs at 03:00 in
-# the same repo). The branch carries the agent's commit(s) out to GitHub: a
+# Never mutate the primary working tree (other jobs — e.g. tad-pipeline — and
+# live dev sessions share that repo). The branch carries the agent's
+# commit(s) out to GitHub: a
 # pure Minor/Nit autofix is opened as a PR and auto-merged then deleted; a
 # branch carrying a Critical/Major fix is opened as a REVIEW PR and retained
 # for Patric to merge (escalated-pr); on ship-out failure it stays standing as
