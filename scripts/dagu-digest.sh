@@ -25,9 +25,6 @@ DAGU="${DAGU:-/opt/homebrew/bin/dagu}"
 AUTOFIX_LOG="${AUTOFIX_LOG:-${HOME}/.local/state/dagu-autofix.jsonl}"
 DAGU_LOG_DIR="${DAGU_LOG_DIR:-${HOME}/Library/Application Support/dagu/logs}"
 
-AUTOFIX_SINCE_24H=$(date -u -v-24H +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '-24 hours' +%Y-%m-%dT%H:%M:%SZ)
-AUTOFIX_SINCE_7D=$(date -u -v-7d +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '-7 days' +%Y-%m-%dT%H:%M:%SZ)
-
 # Derive https://github.com/<owner>/<repo> from the system repo's origin.
 github_repo_url() {
   local url
@@ -135,27 +132,26 @@ for f in "$DAGS_DIR"/*.yaml; do
   dag=$(basename "$f" .yaml)
 
   schedule=$(awk -F'"' '/^schedule:/ {print $2; exit}' "$f")
-  dow=$(echo "$schedule" | awk '{print $5}')
+  # Day-of-week is the LAST cron field, not field 5 — a schedule may carry a
+  # CRON_TZ=… prefix (tad-pipeline) that shifts the field positions.
+  dow=$(echo "$schedule" | awk '{print $NF}')
   if [[ -n "$dow" && "$dow" != "*" ]]; then
     window="7d"
-    autofix_since="$AUTOFIX_SINCE_7D"
   else
     window="24h"
-    autofix_since="$AUTOFIX_SINCE_24H"
   fi
 
   # Pull both the counts and the *latest* run's status. We gate ATTN on the
   # latest, not on any failure in the window, so a transient failure that has
   # since recovered (next scheduled run, or autofix + retry) doesn't keep
   # nagging until it falls out of the 24h window.
-  read -r runs ok failed latest_status < <("$DAGU" history "$dag" --last "$window" --format csv 2>/dev/null | awk -F',' '
+  read -r runs ok latest_status < <("$DAGU" history "$dag" --last "$window" --format csv 2>/dev/null | awk -F',' '
     NR>1 {
       total++
       if (latest == "") latest = $3
       if ($3 == "Succeeded") ok++
-      else if ($3 == "Failed") failed++
     }
-    END { printf "%d %d %d %s\n", total+0, ok+0, failed+0, (latest=="" ? "-" : latest) }
+    END { printf "%d %d %s\n", total+0, ok+0, (latest=="" ? "-" : latest) }
   ')
 
   marker="OK   "
