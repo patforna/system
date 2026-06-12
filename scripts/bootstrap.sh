@@ -46,7 +46,10 @@ echo ""
 echo "--- git-crypt ---"
 if command -v git-crypt &>/dev/null; then
   cd "${HOME}/github/system"
-  if git-crypt status &>/dev/null 2>&1; then
+  # `git-crypt status` exits 0 whether the repo is locked or not, so it cannot
+  # detect the locked state. The key file below is written by `git-crypt unlock`
+  # and removed by `git-crypt lock` — its presence is the real unlock signal.
+  if [[ -f .git/git-crypt/keys/default ]]; then
     echo "  OK    git-crypt already unlocked"
   else
     echo "  ACTION REQUIRED: Unlock private files with:"
@@ -76,7 +79,7 @@ if [[ ! -f "${HOME}/.ssh/id_ed25519" ]]; then
 fi
 
 # --- GitHub Auth ---
-if ! gh auth status &>/dev/null 2>&1; then
+if ! gh auth status &>/dev/null; then
   echo "--- GitHub Auth ---"
   gh auth login
   echo ""
@@ -138,7 +141,7 @@ if command -v dagu &>/dev/null; then
   else
     echo "  NOTE  Start Dagu with: dagu start-all"
   fi
-  echo "  Workflows: drift-check, droplet-watchdog, msgvault-sync, workflow-digest"
+  echo "  Workflows: $(ls "${HOME}/github/system/dagu"/*.yaml | xargs -n1 basename | sed 's/\.yaml$//' | paste -sd, - | sed 's/,/, /g')"
 else
   echo "  SKIP  dagu not installed (check Brewfile)"
 fi

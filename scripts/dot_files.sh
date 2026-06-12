@@ -14,6 +14,12 @@ link() {
     echo "  SKIP  $src (not found)"
     return
   fi
+  # ln -sfn into an existing REAL directory silently creates
+  # dest/$(basename src) instead of replacing dest — refuse instead.
+  if [[ -d "$dest" && ! -L "$dest" ]]; then
+    echo "  WARN  $dest is a real directory — move it aside and re-run"
+    return
+  fi
   mkdir -p "$(dirname "$dest")"
   ln -sfn "$src" "$dest"
   echo "  OK    $dest"
@@ -70,7 +76,9 @@ link "${PUBLIC}/.config/lazygit/config.yml"        "${HOME}/.config/lazygit/conf
 link "${PUBLIC}/.config/git/ignore"                "${HOME}/.config/git/ignore"
 link "${PUBLIC}/.config/fd/config"                 "${HOME}/.config/fd/config"
 link "${PUBLIC}/.config/gcloud/configurations/config_default" "${HOME}/.config/gcloud/configurations/config_default"
+link "${PUBLIC}/.config/espanso"                   "${HOME}/.config/espanso"
 link "${PUBLIC}/.config/dagu/base.yaml"            "${HOME}/.config/dagu/base.yaml"
+link "${REPO}/dagu"                                "${HOME}/.config/dagu/dags"
 link "${PRIVATE}/gws/client_secret.json"          "${HOME}/.config/gws/client_secret.json"
 link "${PRIVATE}/gws/.encryption_key"             "${HOME}/.config/gws/.encryption_key"
 link "${PRIVATE}/gws/credentials.enc"             "${HOME}/.config/gws/credentials.enc"
@@ -90,10 +98,7 @@ link "${PRIVATE}/claude/memory/MEMORY.md"          "${HOME}/.claude/memory/MEMOR
 link "${PUBLIC}/.claude/statusline-command.sh"     "${HOME}/.claude/statusline-command.sh"
 
 # Skills — symlink directory (individual skill symlinks are tracked in dotfiles)
-if [[ -d "${PUBLIC}/.claude/skills" ]]; then
-  ln -sfn "${PUBLIC}/.claude/skills" "${HOME}/.claude/skills"
-  echo "  OK    ~/.claude/skills"
-fi
+link "${PUBLIC}/.claude/skills"                    "${HOME}/.claude/skills"
 echo ""
 
 # --- macOS app configs ---
