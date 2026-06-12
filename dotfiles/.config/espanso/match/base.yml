@@ -15,4 +15,4 @@ matches:
     replace: 'Output your response and also copy it into my clipboard'
 
   - trigger: ":ask"
-    replace: 'If (and only if) you have questsions, use the AskUserTool (multiple times, if necessary)'
+    replace: 'If (and only if) you have questions, use the AskUserQuestion tool (multiple times, if necessary)'
