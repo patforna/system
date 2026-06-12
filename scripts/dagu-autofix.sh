@@ -37,7 +37,11 @@ if [[ -n "$LOG_FILE" && -r "$LOG_FILE" ]]; then
   # this handler after the configured retry_policy is exhausted, so RETRY_COUNT
   # >= 1 means "retries were configured AND all failed on the same step" — the
   # 'transient' hypothesis has already been tested and disproved.
-  RETRY_COUNT=$(grep -c 'Step execution failed; retrying' "$LOG_FILE" 2>/dev/null || echo 0)
+  # No `|| echo 0`: grep -c already prints 0 (and exits 1) on no match, so the
+  # fallback would append a second 0 and corrupt the value interpolated into
+  # the prompt. The :-0 default only covers an unreadable file (empty output).
+  RETRY_COUNT=$(grep -c 'Step execution failed; retrying' "$LOG_FILE" 2>/dev/null) || true
+  RETRY_COUNT="${RETRY_COUNT:-0}"
 fi
 
 TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -52,7 +56,7 @@ if [[ -f "$RETRY_SENTINEL" ]]; then
   if [[ "$sentinel_runid" == "$DAG_RUN_ID" ]]; then
     rm -f "$RETRY_SENTINEL"
     if [[ -n "$NOTIFY_EMAIL" ]]; then
-      /opt/homebrew/bin/gws gmail +send --to "$NOTIFY_EMAIL" \
+      "$GWS" gmail +send --to "$NOTIFY_EMAIL" \
         --subject "[DAGU AUTOFIX] $DAG_NAME — re-run after fix still failing" \
         --body "Autofix committed a fix for $DAG_NAME and re-triggered it, but the re-run ($DAG_RUN_ID) also failed. The fix did not hold — needs manual investigation. Log: ${LOG_FILE:-(unavailable)}" >/dev/null 2>&1 || true
     fi

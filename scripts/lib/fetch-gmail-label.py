@@ -6,6 +6,19 @@ Body is plaintext (preferred) or HTML stripped to plaintext-ish, truncated at 30
 """
 
 import argparse, base64, html, json, re, subprocess, sys, time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+
+
+def parsed_date(msg):
+    # RFC-2822 date strings sort alphabetically by weekday name, not in time
+    # order — parse to a datetime for the chronological sort the docstring
+    # promises. Unparseable/missing dates sort first.
+    try:
+        dt = parsedate_to_datetime(msg["date"])
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    except (KeyError, ValueError, TypeError):
+        return datetime.min.replace(tzinfo=timezone.utc)
 
 
 def gws(args, retries=3, backoff=2.0):
@@ -127,7 +140,7 @@ def main():
             "body": body,
         })
 
-    out.sort(key=lambda x: x.get("date", ""))
+    out.sort(key=parsed_date)
     with open(args.output, "w") as f:
         json.dump(out, f, indent=2, ensure_ascii=False)
     print(f"wrote {len(out)} messages to {args.output} "

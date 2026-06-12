@@ -8,3 +8,11 @@ timeout_sec: 5400
 steps:
   - name: tad-daily-code-review
     command: bash -c 'eval "$(/opt/homebrew/bin/brew shellenv)" && "${HOME}/github/system/scripts/tad-daily-code-review.sh"'
+    # No dagu-level retries (overrides the base.yaml default): the script's
+    # deliberate exit-1 paths (claude crashed, persistent-unhandled range) are
+    # not transient, and each retry burns another full worktree + review
+    # session. The script retries at its own level — a non-advanced marker
+    # makes the same range retry on the next scheduled run.
+    retry_policy:
+      limit: 0
+      interval_sec: 1  # required field whenever retry_policy is present; unused at limit 0

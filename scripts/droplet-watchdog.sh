@@ -46,7 +46,10 @@ if [[ -z "$CREATED_AT" ]]; then
 fi
 
 # --- Calculate uptime ---
-CREATED_EPOCH=$(date -jf "%Y-%m-%dT%H:%M:%SZ" "$CREATED_AT" +%s 2>/dev/null || date -d "$CREATED_AT" +%s)
+# -u is required: without it BSD date treats the trailing Z as a literal and
+# parses the timestamp as LOCAL time, overstating uptime by the UTC offset
+# (~2 h in CEST) — same pitfall dev-down documents. GNU date -d parses Z fine.
+CREATED_EPOCH=$(date -juf "%Y-%m-%dT%H:%M:%SZ" "$CREATED_AT" +%s 2>/dev/null || date -d "$CREATED_AT" +%s)
 NOW_EPOCH=$(date +%s)
 UPTIME_HOURS=$(( (NOW_EPOCH - CREATED_EPOCH) / 3600 ))
 
