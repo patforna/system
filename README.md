@@ -45,13 +45,16 @@ Installs Homebrew, all packages from the Brewfile (formulae, casks, VS Code exte
 | Git            | [`.gitconfig`](dotfiles/.gitconfig), [`.config/git/ignore`](dotfiles/.config/git/ignore) |
 | SSH            | [`.ssh-config`](dotfiles/.ssh-config) (uses `Include` for machine-local IP) |
 | Terminal       | [`.config/ghostty/config`](dotfiles/.config/ghostty/config) |
+| Text expander  | [`.config/espanso/`](dotfiles/.config/espanso/) |
 | Neovim         | [`.config/nvim/init.lua`](dotfiles/.config/nvim/init.lua), [`lazy-lock.json`](dotfiles/.config/nvim/lazy-lock.json) |
 | Editors        | [`vscode-settings.json`](dotfiles/vscode-settings.json), [`vscode-keybindings.json`](dotfiles/vscode-keybindings.json) |
 | Prompt         | [`.config/starship.toml`](dotfiles/.config/starship.toml) |
 | History        | [`.config/atuin/config.toml`](dotfiles/.config/atuin/config.toml) |
 | Monitor        | [`.config/btop/btop.conf`](dotfiles/.config/btop/btop.conf) |
 | GitHub CLI     | [`.config/gh/config.yml`](dotfiles/.config/gh/config.yml) |
+| Lazygit        | [`.config/lazygit/config.yml`](dotfiles/.config/lazygit/config.yml) |
 | fd             | [`.config/fd/config`](dotfiles/.config/fd/config) |
+| gcloud         | [`.config/gcloud/configurations/config_default`](dotfiles/.config/gcloud/configurations/config_default) |
 | Claude Code    | [`CLAUDE.md`](private/claude/CLAUDE.md), [`memory/MEMORY.md`](private/claude/memory/MEMORY.md), [`skills/`](dotfiles/.claude/skills/), [`statusline-command.sh`](dotfiles/.claude/statusline-command.sh) |
 | Packages       | [`Brewfile`](Brewfile) — formulae, casks, VS Code extensions, uv tools, Mac App Store apps |
 | File assocs    | [`scripts/file-associations.conf`](scripts/file-associations.conf) |
@@ -72,7 +75,7 @@ Custom statusline rendered by [`statusline-command.sh`](dotfiles/.claude/statusl
 | 🧠 context | stdin JSON | Context window usage — bar turns yellow at 60%, red at 80% |
 | 🔥 usage | [OAuth API](https://api.anthropic.com/api/oauth/usage) | 5h billing window — real utilization % + reset countdown |
 
-Usage data is fetched from Anthropic's OAuth endpoint using Claude Code's own credentials (macOS Keychain), cached for 60s, and refreshed in the background to keep render time under 25ms.
+Usage data is fetched from Anthropic's OAuth endpoint using Claude Code's own credentials (macOS Keychain), cached for 60s, and refreshed in the background to keep render time under 200ms.
 
 ## Utilities
 
@@ -82,43 +85,46 @@ Usage data is fetched from Anthropic's OAuth endpoint using Claude Code's own cr
 |---------|---------|
 | `find-session <hash\|text>` | Locate a Claude Code session by commit hash or by text — mode auto-detected (hex that resolves to a commit ⇒ hash mode, else text). Hash mode matches the `[branch hash]` signature `git commit` prints, falling back to timestamp-sorted hash mentions when it wasn't captured (e.g. subagent/headless commits). Text mode lists sessions whose transcript matches, newest first; `--prompts-only` restricts to your messages. Pass `--repo` to narrow to the current repo's sessions. |
 | `claude-replay`       | Extract a Claude Code session transcript into readable markdown — full subagent prompts/responses, main-thread text, and Bash calls, no TUI truncation. UUIDs resolve globally, so `claude-replay <uuid>` works from any directory; with no arg, falls back to the latest session in the cwd's project. Use `--list` to browse, `--commit <hash>` to locate a session via `find-session`. |
-| `drift-check`         | Detect untracked system state and Mac ↔ Linux config divergence. Two surfaces: `--local` (Brewfile, casks, apps, symlinks…) runs daily via Dagu as an informational nudge; `--remote` (Mac dotfiles vs `remote/`) runs as a gate in `dev-up`/`bootstrap.sh`. No mode = both. `--notify` emails the list and exits 0 (no autofix); otherwise exits 1 on drift. |
+| `drift-check`         | Detect untracked system state and Mac ↔ Linux config divergence. Two surfaces: `--local` (Brewfile, casks, apps, symlinks…) runs weekly via Dagu as an informational nudge; `--remote` (Mac dotfiles vs `remote/`) runs as a gate in `dev-up`/`bootstrap.sh`. No mode = both. `--notify` emails the list and exits 0 (no autofix) — and only when the drift set changed since the last notification; otherwise exits 1 on drift. |
 | `dev-up` / `dev-down` | Bring the remote dev droplet up/down and sync local SSH config. |
 
 ## Dagu workflows
 
 Local [Dagu](https://dagu.cloud/) instance runs the schedules in [`dagu/`](dagu/). The Mac launchd job starts Dagu on login; the UI is at <http://localhost:8080>.
 
-| DAG                     | Cadence            | What it does                                                                                          |
-|-------------------------|--------------------|-------------------------------------------------------------------------------------------------------|
-| `msgvault-sync`         | Daily at 03:00     | `msgvault sync` of the configured Gmail account                                                       |
-| `drift-check`           | Daily at 03:00     | [`scripts/drift-check`](scripts/drift-check) `--local --notify` — emails local drift, exits 0 (no autofix). Remote parity is gated in `dev-up`, not here. |
-| `droplet-watchdog`      | Every 4 hours      | Emails + macOS-notifies if the `dev` DigitalOcean droplet has been up >24h                            |
-| `workflow-digest`       | Daily at 04:00     | [`dagu-digest.sh`](scripts/dagu-digest.sh) — summarises 24h (7d for weekly DAGs) status, mails it     |
-| `jobs-digest`           | Saturday at 03:00  | Vets last 7d of `label:jobs` mail via `claude -p` against target-role criteria; HTML email            |
-| `tech-news-digest`      | Saturday at 03:00  | Ranks last 7d of `label:tech-news` mail via `claude -p` into a single HTML email                      |
-| `tad-pipeline`          | Tue–Sat at 03:00   | Runs `uv run tad pipeline run -v` in the TAD repo                                                      |
-| `tad-daily-code-review` | Daily at 03:00     | Sweeps non-`/auto-task` commits on `main`, autofixes safe Minor/Nit in a worktree, emails only Critical/Major |
+| DAG                     | Cadence              | What it does                                                                                          |
+|-------------------------|----------------------|-------------------------------------------------------------------------------------------------------|
+| `msgvault-sync`         | Daily at 03:00       | `msgvault sync` of the personal Gmail account                                                         |
+| `drift-check`           | Monday at 03:00      | [`scripts/drift-check`](scripts/drift-check) `--local --notify` — emails local drift, exits 0 (no autofix). Remote parity is gated in `dev-up`, not here. |
+| `droplet-watchdog`      | Every 4 hours        | Emails + macOS-notifies if the `dev` DigitalOcean droplet has been up >24h                            |
+| `workflow-digest`       | Daily at 04:00       | [`dagu-digest.sh`](scripts/dagu-digest.sh) — summarises 24h (7d for weekly DAGs) status, mails it     |
+| `jobs-digest`           | Saturday at 03:00    | Vets last 7d of `label:jobs` mail via `claude -p` against target-role criteria; HTML email            |
+| `tech-news-digest`      | Saturday at 03:00    | Ranks last 7d of `label:tech-news` mail via `claude -p` into a single HTML email                      |
+| `tad-pipeline`          | Tue–Sat at 04:30 UTC | Runs `uv run tad pipeline run -v` in the TAD repo                                                     |
+| `tad-daily-code-review` | Daily at 03:00       | Sweeps non-`/auto-task` commits on `main`, ships safe Minor/Nit autofixes via auto-merged PR, escalates Critical/Major as a review PR (email fallback) |
 
-Times are local (Europe/Zurich).
+Times are local (Europe/Zurich), except `tad-pipeline`, which is pinned to UTC (DST-proof, clear of the flaky ~02:00 UTC nasdaq window).
 
 ### Email signals
 
 `NOTIFY_EMAIL` (set in `private/droplet-watchdog.conf`) receives:
 
-| Subject                                                  | When                            |
-|----------------------------------------------------------|---------------------------------|
-| `[DAGU] Daily digest — <status>`                         | 04:00 daily                     |
-| `[DAGU AUTOFIX] <dag> — needs human`                     | On escalation only              |
-| `[TAD SWEEP] <range> — needs a human`                    | Sweep escalation only           |
-| `Dev droplet running for Xd Yh`                          | Droplet up >24h                 |
-| `[Jobs digest]` / `[Tech-news digest]`                   | Saturday 03:00                  |
+| Subject                                                  | When                                      |
+|----------------------------------------------------------|-------------------------------------------|
+| `[DAGU] Daily digest — <status>`                         | 04:00 daily                               |
+| `[DAGU AUTOFIX] <dag> — needs human`                     | On escalation only                        |
+| `[DAGU AUTOFIX] <dag> — re-run after fix still failing`  | Autofixed DAG failed again on re-run      |
+| `[TAD SWEEP] review PR — <range>`                        | Sweep opened an escalation PR             |
+| `[TAD SWEEP] <range> — needs a human`                    | Sweep escalation with no reviewable fix   |
+| `[DRIFT] N untracked item(s)`                            | Monday 03:00, only when the set changed   |
+| `Dev droplet running for Xd Yh`                          | Droplet up >24h                           |
+| `[Jobs digest]` / `[Tech-news digest]`                   | Saturday 03:00                            |
 
-Daily digest `<status>` is one of `all ok` / `N autofixed` / `N need human` / `N unhandled failures` / `N stale`. Only `need human` and `unhandled failures` require action — read the per-failure `[DAGU AUTOFIX]` mail or the dagu UI.
+Daily digest `<status>` is one of `all ok` / `all ok (N auto-fixed)` / `N need attention`. Only `need attention` requires action — body rows are marked OK / FIXED / ATTN; read the per-failure `[DAGU AUTOFIX]` mail or the dagu UI.
 
 ### Autofix
 
-DAG failures route through [`scripts/dagu-autofix.sh`](scripts/dagu-autofix.sh) (wired in via `handler_on.failure` in [`base.yaml`](dotfiles/.config/dagu/base.yaml)), which hands the failure to a local Claude session. Classification and behaviour live in the prompt; outcomes append to `~/.local/state/dagu-autofix.jsonl` so the daily digest can show `[FIX]`/`[ESC]` instead of `[FAIL]`.
+DAG failures route through [`scripts/dagu-autofix.sh`](scripts/dagu-autofix.sh) (wired in via `handler_on.failure` in [`base.yaml`](dotfiles/.config/dagu/base.yaml)), which hands the failure to a local Claude session. Classification and behaviour live in the prompt; outcomes append to `~/.local/state/dagu-autofix.jsonl` so the daily digest can mark a handled failure `FIXED` instead of `ATTN`.
 
 ## Remote box
 
