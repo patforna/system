@@ -55,6 +55,19 @@ if ! grep -qi "<li" "$HTML_FILE" || ! grep -qi "footnote" "$HTML_FILE"; then
   exit 1
 fi
 
+# Coverage observability (soft — never blocks send). The prompt asks the model
+# to record how many of the fetched messages it actually processed. A healthy
+# run reads all of them; a number well below $count means the ranking saw only
+# part of the week. Logged, not enforced — a count quibble shouldn't lose a
+# real digest, but it surfaces in the dagu logs if coverage degrades.
+processed=$(grep -oiE 'coverage: processed=[0-9]+' "$HTML_FILE" | grep -oE '[0-9]+' | head -1)
+if [[ -n "$processed" ]]; then
+  echo "coverage: model processed $processed of $count fetched messages" >&2
+  (( processed < count )) && echo "WARN: incomplete coverage ($processed/$count)" >&2
+else
+  echo "WARN: no coverage marker in render" >&2
+fi
+
 # 3. Send
 echo "=== Sending ==="
 "$GWS" gmail +send \
