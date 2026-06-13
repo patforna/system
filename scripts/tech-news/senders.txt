@@ -1,3 +1,18 @@
+# Canonical sender list for the Gmail `tech-news` label — source of truth for
+# rebuilding the filter if it is ever lost (it briefly lived only in /tmp and
+# was nearly clobbered; see commit 9a12152).
+#
+# REBUILD RECIPE
+#   The live label is applied by a single Gmail filter:
+#     criteria: from:(addr1 OR addr2 OR ... OR addrN)   <- the lines below, joined with " OR "
+#     action:   add label `tech-news`, remove INBOX, remove SPAM   (does NOT mark read)
+#   A separate filter (from:patric.fornasier@gmail.com subject:"Tech-news digest",
+#   add label only) tags the round-tripped digest emails — keep it, but it is NOT
+#   part of this sender set.
+#   Inspect live:  gws gmail users settings filters list --params '{"userId":"me"}'
+#   `drift-check --local` compares this file against that filter (tech-news section).
+#
+# One address per line. `#` comments and blank lines are ignored by the drift check.
 hello@theinformation.com
 pragmaticengineer@substack.com
 pragmaticengineer+the-pulse@substack.com

@@ -336,6 +336,50 @@ run_local_checks() {
     ok "duti not installed (skipping file association check)"
   fi
 
+  # --- tech-news Gmail filter ---
+  # The `tech-news` label is applied by a Gmail filter whose from:(...) list must
+  # stay in sync with scripts/tech-news/senders.txt (the rebuild source of truth).
+  # They silently diverged once; this catches it. Skips cleanly when gws/jq are
+  # unavailable or unauthed — a transient gws blip is not drift.
+  section "tech-news Gmail filter"
+  local tn_file tn_drift_count tracked labels_json label_id filters_json live only_tracked only_live a
+  tn_file="${HOME}/github/system/scripts/tech-news/senders.txt"
+  tn_drift_count=${#DRIFT[@]}
+  if ! command -v jq &>/dev/null || [[ ! -f "$tn_file" || ! -x "$GWS" ]]; then
+    ok "skipped (jq, senders.txt, or gws unavailable)"
+  else
+    tracked=$(grep -vE '^[[:space:]]*(#|$)' "$tn_file" | tr 'A-Z' 'a-z' | tr -d ' \t' | sort -u)
+    labels_json=$("$GWS" gmail users labels list --params '{"userId":"me"}' 2>/dev/null | grep -v '^Using keyring')
+    label_id=$(jq -r '.labels[]? | select(.name=="tech-news") | .id' <<<"$labels_json" 2>/dev/null)
+    filters_json=$("$GWS" gmail users settings filters list --params '{"userId":"me"}' 2>/dev/null | grep -v '^Using keyring')
+    if [[ -z "$label_id" || -z "$filters_json" ]]; then
+      ok "skipped (gws returned no labels/filters — auth or network)"
+    else
+      # Union of from:/query criteria across filters that add the tech-news label,
+      # excluding the self-digest filter (its query carries a subject: token) and
+      # Patric's own address. Extract bare emails, normalise, sort.
+      live=$(jq -r --arg L "$label_id" '
+        .filter[]?
+        | select((.action.addLabelIds // []) | index($L))
+        | (.criteria.from // .criteria.query // "")
+        | select((test("subject:";"i")) | not)
+      ' <<<"$filters_json" 2>/dev/null \
+        | grep -oiE '[a-z0-9._%+-]+@[a-z0-9.-]+' | tr 'A-Z' 'a-z' \
+        | grep -vix 'patric.fornasier@gmail.com' | sort -u)
+      if [[ -z "$live" ]]; then
+        ok "skipped (no tech-news sender filter found)"
+      else
+        only_tracked=$(comm -23 <(echo "$tracked") <(echo "$live"))
+        only_live=$(comm -13 <(echo "$tracked") <(echo "$live"))
+        while IFS= read -r a; do [[ -n "$a" ]] && drift "senders.txt lists '$a', absent from live tech-news filter"; done <<<"$only_tracked"
+        while IFS= read -r a; do [[ -n "$a" ]] && drift "live tech-news filter has '$a', absent from senders.txt"; done <<<"$only_live"
+      fi
+    fi
+  fi
+  if [[ ${#DRIFT[@]} -eq $tn_drift_count ]]; then
+    ok "tech-news filter matches senders.txt"
+  fi
+
   # --- Standalone binaries (not managed by Homebrew) ---
   section "Standalone binaries"
   local standalone_bins bin_drift_count bin
