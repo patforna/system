@@ -1,4 +1,9 @@
-schedule: "0 3 * * 6"
+# 03:10 Sat, not 03:00, to lift tech-news's heavy ~100-call gws fan-out off the
+# 03:00 spike it shared with msgvault-sync (daily) and jobs-digest (Sat) — all
+# three hit the same Gmail account. Stays inside the 03:00 pmset wake window:
+# tad-daily-code-review (daily 03:00, long-running) holds the machine awake well
+# past 03:10, and catchup_window covers a sleep race. See scripts/setup-mac-wake.sh.
+schedule: "10 3 * * 6"
 
 # Bound the run defensively — a healthy run is ~5 min; this caps a hung
 # claude render. Genuine failures fall through to the inherited

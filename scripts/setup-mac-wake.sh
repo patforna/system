@@ -2,8 +2,10 @@
 set -euo pipefail
 
 # Schedule a daily macOS wake at 03:00 so dagu's 3 AM crons (msgvault-sync,
-# tad-daily-code-review daily; jobs/tech-news digests Sat; drift-check Mon)
-# fire even when the laptop lid is closed.
+# tad-daily-code-review daily; jobs-digest Sat 03:00, tech-news-digest Sat 03:10;
+# drift-check Mon) fire even when the laptop lid is closed. tech-news sits at
+# 03:10 (off the 03:00 Gmail spike) but inside this single wake window — the
+# long-running code-review job holds the machine awake past it.
 #
 # NOT covered: tad-pipeline, which moved to 04:30 UTC (06:30 CEST, Tue–Sat) —
 # it relies on the machine being awake by then, falling back to the
