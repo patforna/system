@@ -18,15 +18,28 @@ PROMPT_FILE="$SCRIPT_DIR/tech-news/prompt.md"
 HTML_FILE="/tmp/tech-news.html"
 DATE=$(date '+%Y-%m-%d')
 
-# 1. Fetch 7 days of tech-news mail
-"$PYTHON3" "$SCRIPT_DIR/lib/fetch-gmail-label.py" \
-    --days 7 --label tech-news --output "$DATA_FILE" || {
-  echo "fetch failed" >&2; exit 1;
-}
+# 1. Fetch 7 days of tech-news mail. Primary: the local msgvault archive —
+# reads touch Gmail zero times, so the gws exit-5 failure mode (~100 sequential
+# message.get calls) is gone entirely (see private/GOTCHAS.md). Fallback: the
+# gws fetcher, used when msgvault is missing/stale/returns too little, so a
+# broken archive never loses a digest. The count<30 floor below is the final
+# guard regardless of source.
+fetched_via="msgvault"
+if ! "$PYTHON3" "$SCRIPT_DIR/lib/fetch-msgvault-label.py" \
+       --days 7 --label tech-news --output "$DATA_FILE" \
+   || (( $(jq length "$DATA_FILE" 2>/dev/null || echo 0) < 30 )); then
+  echo "msgvault fetch unavailable or thin — falling back to gws" >&2
+  fetched_via="gws"
+  "$PYTHON3" "$SCRIPT_DIR/lib/fetch-gmail-label.py" \
+      --days 7 --label tech-news --output "$DATA_FILE" || {
+    echo "fetch failed" >&2; exit 1;
+  }
+fi
+echo "fetched via $fetched_via" >&2
 
-# A healthy week is ~90-120 messages; near-zero means the Gmail filter or
-# label broke (see scripts/tech-news/senders.txt), not a quiet week — fail
-# into the autofix path rather than email a hollow digest.
+# A healthy week is ~90-120 messages; near-zero from both sources means the
+# Gmail filter or label broke (see scripts/tech-news/senders.txt), not a quiet
+# week — fail into the autofix path rather than email a hollow digest.
 count=$(jq length "$DATA_FILE")
 if (( count < 30 )); then
   echo "only $count messages fetched (norm ~100) — tech-news filter/label likely broken" >&2
