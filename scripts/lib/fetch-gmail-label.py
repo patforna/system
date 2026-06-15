@@ -128,8 +128,11 @@ def main():
         headers = {h["name"].lower(): h["value"]
                    for h in msg["payload"].get("headers", [])}
         body = extract_body(msg)
-        if len(body) > 30_000:
-            body = body[:30_000] + "\n…[truncated]"
+        # Cap only pathological sizes — 30k truncated the densest aggregators
+        # mid-list (AINews/The Pulse/The Batch run 34-56k), dropping stories;
+        # the full corpus fits the 1M-token context, so 100k is headroom.
+        if len(body) > 100_000:
+            body = body[:100_000] + "\n…[truncated]"
         out.append({
             "id": msg["id"],
             "thread_id": msg["threadId"],
