@@ -72,6 +72,12 @@ GWS="${GWS:-/opt/homebrew/bin/gws}"
 # steady-state un-reconciled item nudge ONCE instead of every day (see the
 # --notify block at the foot of the file).
 DRIFT_STATE_FILE="${HOME}/.local/state/drift-notify-$(hostname -s 2>/dev/null || hostname).sha"
+# Human-readable pending-drift list (one item per line), written on every
+# --notify run that finds drift and removed on a clean run. dagu-digest.sh
+# reads this to show pending drift under a DRIFT marker, so the daily digest
+# agrees with the [DRIFT] email instead of reporting drift-check "OK". Path
+# must match DRIFT_PENDING_FILE in scripts/dagu-digest.sh.
+DRIFT_PENDING_FILE="${HOME}/.local/state/drift-pending-$(hostname -s 2>/dev/null || hostname).txt"
 
 # --- Helpers ---
 
@@ -751,8 +757,9 @@ echo "=============================="
 if [[ ${#DRIFT[@]} -eq 0 ]]; then
   echo "No drift detected."
   # Clear the notify fingerprint so a later recurrence of the same item pages
-  # again (a resolved-then-returned item is genuinely new).
-  [[ "$NOTIFY" == 1 ]] && rm -f "$DRIFT_STATE_FILE"
+  # again (a resolved-then-returned item is genuinely new), and clear the
+  # pending-drift list so the daily digest stops showing a DRIFT row.
+  [[ "$NOTIFY" == 1 ]] && rm -f "$DRIFT_STATE_FILE" "$DRIFT_PENDING_FILE"
   exit 0
 fi
 
@@ -766,6 +773,12 @@ done
 # dagu failure handler / autofix does NOT fire. Untracked local state is a
 # reconciliation decision for a human, not something to auto-commit at 3am.
 if [[ "$NOTIFY" == 1 ]]; then
+  # Persist the pending list (overwritten each run) so the daily digest can
+  # show a DRIFT row for as long as the items stay unreconciled — independent
+  # of the email dedup below, which only fires once per changed set.
+  mkdir -p "$(dirname "$DRIFT_PENDING_FILE")"
+  printf '%s\n' "${DRIFT[@]}" > "$DRIFT_PENDING_FILE"
+
   # Dedup: email only when the drift SET changes. A steady-state un-reconciled
   # item (e.g. an extension Patric means to keep but hasn't tracked yet) must
   # not re-nag every run — fingerprint the sorted list and skip the send when

@@ -125,8 +125,18 @@ handler_crash_line() {
 
 attn_count=0
 fixed_count=0
+drift_count=0
 rows=""
 details=""
+
+# drift-check --notify exits 0 even when it finds untracked state (drift is an
+# informational reconciliation decision, not a job failure), so a healthy dagu
+# run hides pending drift and this digest would otherwise report drift-check
+# "OK" the same morning a [DRIFT] email lands — a confusing contradiction.
+# drift-check writes the still-pending items here (cleared on a clean run); we
+# read it to surface them under a low-urgency DRIFT marker. Path must match
+# DRIFT_PENDING_FILE in scripts/drift-check.
+DRIFT_PENDING_FILE="${DRIFT_PENDING_FILE:-${HOME}/.local/state/drift-pending-$(hostname -s 2>/dev/null || hostname).txt}"
 
 for f in "$DAGS_DIR"/*.yaml; do
   dag=$(basename "$f" .yaml)
@@ -236,6 +246,22 @@ for f in "$DAGS_DIR"/*.yaml; do
     fi
   fi
 
+  # Pending local drift: the dagu run succeeded, but drift-check left untracked
+  # items unreconciled. Surface them with a DRIFT marker (not ATTN — drift is
+  # low-urgency, never an autofix target) so the digest agrees with the [DRIFT]
+  # email instead of flatly claiming "OK". Only when the run didn't itself fail.
+  if [[ "$dag" == "drift-check" && "$latest_status" != "Failed" && -s "$DRIFT_PENDING_FILE" ]]; then
+    n_drift=$(grep -c . "$DRIFT_PENDING_FILE")
+    marker="DRIFT"
+    comment="${n_drift} untracked item(s) pending reconciliation"
+    drift_count=$((drift_count + n_drift))
+    detail_block="  ${dag} (${n_drift} untracked item(s) pending)"$'\n'
+    while IFS= read -r line; do
+      [[ -n "$line" ]] && detail_block+="    - ${line}"$'\n'
+    done < "$DRIFT_PENDING_FILE"
+    detail_block+="    Reconcile (track in Brewfile/manual-apps.conf, or drop), then re-run drift-check."$'\n'
+  fi
+
   if [[ -n "$comment" ]]; then
     rows+=$(printf '%s  %-20s  %d/%d in %-3s  — %s\n' "$marker" "$dag" "$ok" "$runs" "$window" "$comment")
   else
@@ -250,10 +276,16 @@ done
 
 if (( attn_count > 0 )); then
   subject="[DAGU] Daily digest — ${attn_count} need attention"
-elif (( fixed_count > 0 )); then
-  subject="[DAGU] Daily digest — all ok (${fixed_count} auto-fixed)"
 else
-  subject="[DAGU] Daily digest — all ok"
+  extras=()
+  (( fixed_count > 0 )) && extras+=("${fixed_count} auto-fixed")
+  (( drift_count > 0 )) && extras+=("${drift_count} drift pending")
+  if (( ${#extras[@]} > 0 )); then
+    suffix=$(printf '%s, ' "${extras[@]}"); suffix="${suffix%, }"
+    subject="[DAGU] Daily digest — all ok (${suffix})"
+  else
+    subject="[DAGU] Daily digest — all ok"
+  fi
 fi
 
 body="Dagu daily digest — ${TODAY}
@@ -266,7 +298,7 @@ if [[ -n "$details" ]]; then
 ${details}"
 fi
 
-body+="Markers: OK (healthy) / FIXED (autofix handled it, no action needed) / ATTN (needs you).
+body+="Markers: OK (healthy) / FIXED (autofix handled it, no action needed) / DRIFT (untracked state to reconcile, low urgency) / ATTN (needs you).
 
 UI: http://localhost:8080"
 
