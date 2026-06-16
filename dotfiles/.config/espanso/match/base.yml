@@ -28,3 +28,6 @@ matches:
 
   - trigger: ":cmf"
     replace: "/model fable"
+
+  - trigger: ":cfa"
+    replace: "Proceed with full-autonomy. Don't stop or ask questions until done."
