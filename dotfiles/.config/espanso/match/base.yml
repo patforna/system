@@ -31,3 +31,6 @@ matches:
 
   - trigger: ":cfa"
     replace: "Proceed with full-autonomy. Don't stop or ask questions until done."
+
+  - trigger: ":cdfb"
+    replace: "please check if anything from this converation needs to flow back into the design system, style guide, decision log, skill.md or claude.md or anywhere else in this project and, if yes, integrate."
