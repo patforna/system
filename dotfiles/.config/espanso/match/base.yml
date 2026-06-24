@@ -37,3 +37,14 @@ matches:
 
   - trigger: ":cda"
     replace: "wrap things up, tidy up any WIP and archive open explorations and handoffs, etc."
+
+  - trigger: ":ea"
+    replace: |-
+      Lock in the recommended exploration and write the eng handoff.
+
+      - One final design — resolve every open question, no alternatives left standing.
+      - Full state matrix: rest/hover/focus/active/disabled, light + dark, and any coexistence cases.
+      - Handoff says only what changes — no rationale, history, trail, or anything Code can infer from its repo + this project.
+      - Compliant with the system's principles + tokens; reference is the pixel target.
+      - Flag any new/changed token as a DS change (sync first); pure restyles as frontend-only.
+      - If this moves the system, sync back same pass: decision-log + every affected specimen/style-guide.
