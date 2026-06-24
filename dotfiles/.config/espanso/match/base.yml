@@ -38,7 +38,7 @@ matches:
   - trigger: ":cda"
     replace: "wrap things up, tidy up any WIP and archive open explorations and handoffs, etc."
 
-  - trigger: ":ea"
+  - trigger: ":cdhandoff"
     replace: |-
       Lock in the recommended exploration and write the eng handoff.
 
