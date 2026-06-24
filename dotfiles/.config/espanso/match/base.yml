@@ -32,12 +32,6 @@ matches:
   - trigger: ":cfa"
     replace: "Proceed with full-autonomy. Don't stop or ask questions until done."
 
-  - trigger: ":cdfb"
-    replace: "please check if anything from this converation needs to flow back into the design system, style guide, decision log, skill.md or claude.md or anywhere else in this project and, if yes, integrate."
-
-  - trigger: ":cda"
-    replace: "wrap things up, tidy up any WIP and archive open explorations and handoffs, etc."
-
   - trigger: ":cdhandoff"
     replace: |-
       Lock in the recommended exploration and write the eng handoff.
@@ -48,3 +42,13 @@ matches:
       - Compliant with the system's principles + tokens; reference is the pixel target.
       - Flag any new/changed token as a DS change (sync first); pure restyles as frontend-only.
       - If this moves the system, sync back same pass: decision-log + every affected specimen/style-guide.
+
+  - trigger: ":cdwrapup"
+    replace: |-
+      Wrap up this Claude Design session — leave the project consistent, nothing settled left in flight.
+
+      - Log every decision reached this session in design-decisions.md.
+      - Sync every change — additions included — everywhere it lives: tokens, specimens (preview/*, style-guide, iconography), README/Component vocabulary, SKILL.md, CLAUDE.md, CLAUDE-CODE.md. New/changed foundation or primitive → style-guide + preview card; new recurring component → Component-vocabulary entry. No drift.
+      - Archive finished explorations + closed handoffs; delete decided briefs.
+      - @dsCard on foundations only — strip strays.
+      - Terse recap: changed / archived / still open.
