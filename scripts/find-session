@@ -182,6 +182,8 @@ if [[ "$MODE" == "hash" ]]; then
     REF_MATCHES=$(rg -l --no-messages -- "$HASH" "$SEARCH_ROOT" 2>/dev/null || true)
     if [[ -z "$REF_MATCHES" ]]; then
         echo "no sessions mention $HASH." >&2
+        echo "  (if the repo's history was rewritten/rebased since this commit," >&2
+        echo "   transcripts hold the original hash — try that hash instead.)" >&2
         exit 2
     fi
 
