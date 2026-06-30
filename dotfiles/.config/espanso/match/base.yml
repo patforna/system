@@ -24,7 +24,7 @@ matches:
     replace: "/model sonnet"
 
   - trigger: ":cmo"
-    replace: "/model opus"
+    replace: "/model opus[1m]"
 
   - trigger: ":cmf"
     replace: "/model fable"
@@ -41,14 +41,13 @@ matches:
       - Handoff says only what changes — no rationale, history, trail, or anything Code can infer from its repo + this project.
       - Compliant with the system's principles + tokens; reference is the pixel target.
       - Flag any new/changed token as a DS change (sync first); pure restyles as frontend-only.
-      - If this moves the system, sync back same pass: decision-log + every affected specimen/style-guide.
 
   - trigger: ":cdwrapup"
     replace: |-
       Wrap up this Claude Design session — leave the project consistent, nothing settled left in flight.
 
       - Log every decision reached this session in design-decisions.md.
-      - Sync every change — additions included — everywhere it lives: tokens, specimens (preview/*, style-guide, iconography), README/Component vocabulary, SKILL.md, CLAUDE.md, CLAUDE-CODE.md. New/changed foundation or primitive → style-guide + preview card; new recurring component → Component-vocabulary entry. No drift.
+      - Sync every change back — additions included — everywhere it lives: tokens, specimens (preview/*, style-guide, iconography), README/Component vocabulary, SKILL.md, CLAUDE.md, CLAUDE-CODE.md. New/changed foundation or primitive → style-guide + preview card; new recurring component → Component-vocabulary entry. No drift.
       - Archive finished explorations + closed handoffs; delete decided briefs.
       - @dsCard on foundations only — strip strays.
       - Terse recap: changed / archived / still open.
