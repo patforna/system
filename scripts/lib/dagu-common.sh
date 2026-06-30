@@ -16,8 +16,34 @@ require_notify_email() {
 
 # Single chokepoint for the headless-claude invocation (model id + flags live
 # in ONE place). Caller wraps cd/tee/redirection around it as today.
+#
+# Bounded retry on TRANSIENT API/connection blips only. `claude -p` periodically
+# drops the streaming connection mid-response ("API Error: Connection closed
+# mid-response", socket-close, overload, rate-limit) and exits non-zero on a
+# self-clearing fault. base.yaml's retry_policy absorbs this for most DAGs, but
+# tad-daily-code-review opts out (limit 0 — each dagu retry burns a full worktree
+# + review session) and relies on "the script retries at its own level": that
+# retry lives HERE. A genuine non-zero crash (no transient marker in the output)
+# returns immediately and still fails the DAG. Output streams live to the caller
+# (tee/log keeps growing for liveness) while being captured for pattern-matching.
+CLAUDE_MAX_ATTEMPTS="${CLAUDE_MAX_ATTEMPTS:-3}"
 run_claude() {
-  "$CLAUDE" -p --permission-mode bypassPermissions --model claude-opus-4-8 "$@"
+  local attempt rc cap
+  cap=$(mktemp -t run_claude.XXXXXX)
+  for ((attempt = 1; attempt <= CLAUDE_MAX_ATTEMPTS; attempt++)); do
+    : > "$cap"
+    "$CLAUDE" -p --permission-mode bypassPermissions --model claude-opus-4-8 "$@" 2>&1 | tee "$cap"
+    rc=${PIPESTATUS[0]}
+    if (( rc == 0 )); then rm -f "$cap"; return 0; fi
+    if (( attempt < CLAUDE_MAX_ATTEMPTS )) \
+       && grep -qiE 'API Error|connection closed|connection reset|socket connection|overloaded|rate.?limit|read timed out|request timed out' "$cap"; then
+      echo "[run_claude] transient API failure (attempt ${attempt}/${CLAUDE_MAX_ATTEMPTS}, rc=${rc}); retrying after $((attempt * 30))s backoff." >&2
+      sleep $((attempt * 30))
+      continue
+    fi
+    rm -f "$cap"; return "$rc"
+  done
+  rm -f "$cap"; return "$rc"
 }
 
 # Append a fallback JSONL line iff claude never recorded one for this run.
