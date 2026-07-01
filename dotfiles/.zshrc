@@ -68,9 +68,9 @@ alias ea='espanso-add'
 alias es='espanso-show'
 
 # eza
-alias ls="eza --group-directories-first --icons"
-alias la="eza -la --group-directories-first --icons"
-alias lt='eza --tree --level=2 --group-directories-first --icons --all'
+alias ls="eza --group-directories-first --icons=auto"
+alias la="eza -la --group-directories-first --icons=auto"
+alias lt='eza --tree --level=2 --group-directories-first --icons=auto --all'
 alias lls='eza -l --sort=size --total-size'
 alias llm='eza -l --sort=modified'
 
@@ -163,4 +163,5 @@ source /opt/homebrew/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
 # Bound explicitly because vi mode leaves ^I unbound, which breaks fzf's fallback.
 # Autosuggestions are accepted with right-arrow (zsh-autosuggestions default).
 bindkey '^I' fzf-completion
+bindkey -M vicmd '^I' fzf-completion   # also complete in vi normal mode
 
