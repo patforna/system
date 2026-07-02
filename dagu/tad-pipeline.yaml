@@ -7,7 +7,11 @@ schedule: "CRON_TZ=UTC 30 4 * * 2-6"
 
 steps:
   - name: tad-pipeline
-    command: bash -c 'eval "$(/opt/homebrew/bin/brew shellenv)" && cd "${HOME}/github/tad/backend" && uv run tad pipeline run -v'
+    # Network-readiness preflight: the run fires at a scheduled wake, so DNS/wifi
+    # may not be up yet. Wait up to 10min for api.massive.com to resolve (no-op on
+    # healthy runs — first lookup succeeds) rather than burning the pipeline on a
+    # NameResolutionError. See private/GOTCHAS.md.
+    command: bash -c 'eval "$(/opt/homebrew/bin/brew shellenv)" && for i in $(seq 1 30); do host api.massive.com >/dev/null 2>&1 && break; echo "network not ready - api.massive.com unresolved (attempt $i/30), sleeping 20s"; sleep 20; done && cd "${HOME}/github/tad/backend" && uv run tad pipeline run -v'
     retry_policy:
       limit: 2
       interval_sec: 300
