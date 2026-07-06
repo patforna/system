@@ -1,4 +1,6 @@
 brew "actionlint"
+brew "agg"
+brew "asciinema"
 brew "atuin"
 brew "bat"
 brew "btop"
