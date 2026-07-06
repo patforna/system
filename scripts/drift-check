@@ -504,9 +504,10 @@ run_remote_checks() {
   remote_aliases=$(grep -E '^alias ' "${REMOTE}/zshrc" | sed "s/=.*//" | sort)
   while IFS= read -r a; do
     [[ -z "$a" ]] && continue
-    # Mac-only aliases (clipboard, trash, glow, notes, dev SSH)
+    # Mac-only aliases (clipboard, trash, glow, notes, dev SSH, espanso)
     case "$a" in
       "alias pbc"|"alias pbp"|"alias rm"|"alias md"|"alias n"|"alias dev") continue ;;
+      "alias ea"|"alias es") continue ;;
     esac
     drift "zshrc: $a missing from remote"
   done < <(comm -23 <(echo "$mac_aliases") <(echo "$remote_aliases"))
@@ -676,7 +677,7 @@ run_remote_checks() {
   # Mac-only tools that shouldn't be on the droplet. git-crypt is NOT here:
   # the droplet needs it (apt-installed by remote/bootstrap.sh) or private/
   # stays encrypted — keep the check guarding against its removal.
-  mac_only_tools="ccusage|cloc|coreutils|dagu|doctl|duckdb|duti|epubcheck|ffmpeg|gemini-cli|git-filter-repo|glow|googleworkspace-cli|imagemagick|mas|poppler|python@3.12|trash|tree|try|watch|yarn|yt-dlp|zsh-autosuggestions|zsh-syntax-highlighting|zsh|git"
+  mac_only_tools="agg|asciinema|ccusage|cloc|coreutils|dagu|doctl|duckdb|duti|epubcheck|ffmpeg|gemini-cli|git-filter-repo|glow|googleworkspace-cli|imagemagick|mas|poppler|python@3.12|trash|tree|try|watch|yarn|yt-dlp|zsh-autosuggestions|zsh-syntax-highlighting|zsh|git"
 
   # Extract CLI tool names from Brewfile (formulae only)
   brewfile_cli=$(grep '^brew ' "$BREWFILE" | sed 's/^brew "\(.*\)"/\1/' | sed 's|.*/||' | grep -vE "^(${mac_only_tools})$" | sort)
