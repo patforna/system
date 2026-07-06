@@ -54,3 +54,6 @@ matches:
 
   - trigger: ":whh"
     replace: "what's happening here?"
+
+  - trigger: ":chm"
+    replace: "0796850829"
