@@ -16,21 +16,19 @@ awk '
     if (s ~ /^".*"$/ || s ~ /^'\''.*'\''$/) s = substr(s, 2, length(s) - 2)
     return s
   }
-  # block-scalar mode: collect indented body lines, deferring blanks so trailing ones are dropped
-  block {
-    if ($0 ~ /^[[:space:]]*$/) { pending = pending $0 "\n"; next }
-    match($0, /^[[:space:]]*/)
-    if (RLENGTH > repl_indent) { printf "%s%s%s\n", pending, "    ", trim($0); pending = ""; next }
-    block = 0; pending = ""   # dedent ends the block; fall through to reparse this line
+  function show(t, v) {
+    if (length(v) > 80) v = substr(v, 1, 80) "…"
+    print t " → " v
   }
+  # block scalar: show first body line only, then skip the rest
+  block { block = 0; show(trigger, trim($0)); next }
   /^[[:space:]]*- trigger:/ {
     line = $0; sub(/^[[:space:]]*- trigger:[[:space:]]*/, "", line)
     trigger = unquote(trim(line)); next
   }
   /^[[:space:]]*replace:/ {
-    match($0, /^[[:space:]]*/); repl_indent = RLENGTH
     val = $0; sub(/^[[:space:]]*replace:[[:space:]]*/, "", val)
-    if (val ~ /^[|>]/) { print trigger " →"; block = 1 }        # block scalar: body on following lines
-    else print trigger " → " unquote(trim(val))
+    if (val ~ /^[|>]/) block = 1                # block scalar: first body line follows
+    else show(trigger, unquote(trim(val)))
   }
 ' "$BASE_YML"

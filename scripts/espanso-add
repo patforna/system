@@ -26,11 +26,33 @@ if grep -qF "trigger: \"$trigger\"" "$BASE_YML" || grep -qF "trigger: '$trigger'
   exit 1
 fi
 
-# Escape for YAML double-quoted string
-escaped="${replacement//\\/\\\\}"
-escaped="${escaped//\"/\\\"}"
+# Insert the new entry, keeping base.yml sorted alphabetically by trigger
+BASE_YML="$BASE_YML" TRIGGER="$trigger" REPL="$replacement" \
+  uv run --no-project python3 - <<'PY'
+import os, re, pathlib
+p = pathlib.Path(os.environ["BASE_YML"])
+esc = os.environ["REPL"].replace("\\", "\\\\").replace('"', '\\"')
+new = ['  - trigger: "%s"' % os.environ["TRIGGER"], '    replace: "%s"' % esc]
 
-printf '\n  - trigger: "%s"\n    replace: "%s"\n' "$trigger" "$escaped" >> "$BASE_YML"
+entries, cur = [], []
+for ln in p.read_text().splitlines()[1:]:           # skip "matches:" header
+    if re.match(r"^  - trigger:", ln):
+        if cur: entries.append(cur)
+        cur = [ln]
+    elif cur:
+        cur.append(ln)
+if cur: entries.append(cur)
+for b in entries:
+    while b and b[-1].strip() == "":                # drop trailing blanks per block
+        b.pop()
+entries.append(new)
+entries.sort(key=lambda b: re.search(r'trigger:\s*["\']?(.*?)["\']?\s*$', b[0]).group(1).lower())
+
+out = ["matches:"]
+for b in entries:
+    out.append(""); out.extend(b)
+p.write_text("\n".join(out) + "\n")
+PY
 
 echo "Added: $trigger → $replacement"
 

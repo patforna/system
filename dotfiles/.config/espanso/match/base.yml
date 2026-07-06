@@ -1,36 +1,7 @@
 matches:
-  - trigger: ":ml"
-    replace: 'patric.fornasier@gmail.com'
-
-  - trigger: ":cp"
-    replace: "commit and push"
-
-  - trigger: ":shrg"
-    replace: '¯\_(ツ)_/¯'
-
-  - trigger: ":wu"
-    replace: '/wrap-up'
-
-  - trigger: ":clip"
-    replace: 'Output your response and also copy it into my clipboard'
 
   - trigger: ":ask"
     replace: 'If (and only if) you have questions, use the AskUserQuestion tool (multiple times, if necessary)'
-
-  - trigger: ":ukm"
-    replace: "07828268073"
-
-  - trigger: ":cms"
-    replace: "/model sonnet"
-
-  - trigger: ":cmo"
-    replace: "/model opus[1m]"
-
-  - trigger: ":cmf"
-    replace: "/model fable"
-
-  - trigger: ":cfa"
-    replace: "Proceed with full-autonomy. Don't stop or ask questions until done."
 
   - trigger: ":cdhandoff"
     replace: |-
@@ -52,11 +23,41 @@ matches:
       - @dsCard on foundations only — strip strays.
       - Terse recap: changed / archived / still open.
 
-  - trigger: ":whh"
-    replace: "what's happening here?"
+  - trigger: ":cfa"
+    replace: "Proceed with full-autonomy. Don't stop or ask questions until done."
 
   - trigger: ":chm"
     replace: "0796850829"
 
   - trigger: ":chmi"
     replace: "+41796850829"
+
+  - trigger: ":clip"
+    replace: 'Output your response and also copy it into my clipboard'
+
+  - trigger: ":cmf"
+    replace: "/model fable"
+
+  - trigger: ":cmo"
+    replace: "/model opus[1m]"
+
+  - trigger: ":cms"
+    replace: "/model sonnet"
+
+  - trigger: ":cp"
+    replace: "commit and push"
+
+  - trigger: ":ml"
+    replace: 'patric.fornasier@gmail.com'
+
+  - trigger: ":shrg"
+    replace: '¯\_(ツ)_/¯'
+
+  - trigger: ":ukm"
+    replace: "07828268073"
+
+  - trigger: ":whh"
+    replace: "what's happening here?"
+
+  - trigger: ":wu"
+    replace: '/wrap-up'
