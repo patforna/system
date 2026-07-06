@@ -57,3 +57,6 @@ matches:
 
   - trigger: ":chm"
     replace: "0796850829"
+
+  - trigger: ":chmi"
+    replace: "+41796850829"
