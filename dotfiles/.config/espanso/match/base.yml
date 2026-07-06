@@ -51,3 +51,6 @@ matches:
       - Archive finished explorations + closed handoffs; delete decided briefs.
       - @dsCard on foundations only — strip strays.
       - Terse recap: changed / archived / still open.
+
+  - trigger: ":whh"
+    replace: "what's happening here?"
