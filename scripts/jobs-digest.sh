@@ -36,7 +36,9 @@ if (( count == 0 )); then
 fi
 
 # 2. Vet, validate, compose
-PROMPT_FILE="$SCRIPT_DIR/jobs-digest/prompt.md"
+# Prompt lives under private/ (git-crypt): it encodes personal role/comp
+# criteria that must not sit plaintext in this public repo.
+PROMPT_FILE="$SCRIPT_DIR/../private/scripts/jobs-digest/prompt.md"
 [[ -f "$PROMPT_FILE" ]] || { echo "missing $PROMPT_FILE" >&2; exit 1; }
 
 rm -f "$HTML_FILE" "$SUBJECT_FILE"
