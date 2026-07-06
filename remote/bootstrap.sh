@@ -297,7 +297,10 @@ cat > "$HOME/.claude/settings.json" <<'SETTINGS'
     "context7@claude-plugins-official": true,
     "github@claude-plugins-official": true,
     "skill-creator@claude-plugins-official": true,
-    "codex@openai-codex": true
+    "frontend-design@claude-plugins-official": true,
+    "codex@openai-codex": true,
+    "core-skills@core-skills": true,
+    "at@auto-task": true
   },
   "extraKnownMarketplaces": {
     "anthropic-agent-skills": {
@@ -310,6 +313,18 @@ cat > "$HOME/.claude/settings.json" <<'SETTINGS'
       "source": {
         "source": "github",
         "repo": "openai/codex-plugin-cc"
+      }
+    },
+    "core-skills": {
+      "source": {
+        "source": "directory",
+        "path": "/home/patric/github/core-skills"
+      }
+    },
+    "auto-task": {
+      "source": {
+        "source": "directory",
+        "path": "/home/patric/github/auto-task"
       }
     }
   },

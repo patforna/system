@@ -89,8 +89,16 @@ atuin login && atuin sync
 ### 5. Clone repos
 
 ```bash
-gh repo clone <org>/<repo> ~/github/<repo>
+gh repo clone patforna/tad         ~/github/tad
+gh repo clone patforna/tad-tasks   ~/github/tad-tasks
+gh repo clone patforna/core-skills ~/github/core-skills   # core-skills@core-skills plugin (directory source)
+gh repo clone patforna/auto-task   ~/github/auto-task     # at@auto-task plugin (directory source)
 ```
+
+`core-skills` and `auto-task` are wired into `settings.json` as **directory-source**
+marketplaces (see the heredoc above), so they must be cloned to `~/github/` before
+Claude will load their `core-skills:` / `at:` skills. They're private, so this can
+only happen after `gh auth login` (step 4) — hence a manual step here, not in `bootstrap.sh`.
 
 ### 6. Connect
 
