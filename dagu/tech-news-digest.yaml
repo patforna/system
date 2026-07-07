@@ -5,9 +5,9 @@
 # past 03:10, and catchup_window covers a sleep race. See scripts/setup-mac-wake.sh.
 schedule: "10 3 * * 6"
 
-# Bound the run defensively — a healthy run is ~5 min; this caps a hung
-# claude render. Genuine failures fall through to the inherited
-# handler_on.failure (dagu-autofix.sh) like every other DAG.
+# Bound the run defensively — a healthy run is ~20-60 min (chunked extraction
+# dominates); this caps a wedged run. Genuine failures fall through to the
+# inherited handler_on.failure (dagu-autofix.sh) like every other DAG.
 timeout_sec: 5400
 
 steps:

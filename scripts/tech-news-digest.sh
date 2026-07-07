@@ -1,11 +1,18 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-# Weekly tech-news digest. Sends an HN-style ranked email to NOTIFY_EMAIL by
-# feeding 7 days of label:tech-news mail through claude -p.
-# Designed to run via dagu (see dagu/tech-news-digest.yaml).
+# Weekly tech-news digest. Sends an HN-style ranked email to NOTIFY_EMAIL
+# built from 7 days of label:tech-news mail. Designed to run via dagu (see
+# dagu/tech-news-digest.yaml).
 #
-# claude -p renders the HTML to /tmp/tech-news.html; this script then sends.
+# The script owns the pipeline; claude only does judgment. Phases: chunked
+# extraction (haiku, schema-bound JSON), a script-computed coverage gate,
+# link canonicalisation + exact-duplicate merge in code, ONE ranking call
+# (opus) over compact item ids, and a code-rendered HTML template — the model
+# never emits HTML or re-emits item content, which removes the old
+# whole-corpus render's silent-failure modes (partial reads, invented links,
+# malformed markup). See scripts/tech-news/pipeline.py.
+#
 # Keeping the +send out of the model loop avoids alias / PATH surprises in the
 # Bash tool's shell (e.g. zsh `alias cat='bat'` silently emptying --body).
 
@@ -14,9 +21,27 @@ require_notify_email
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 DATA_FILE="/tmp/tech-news-data.json"
-PROMPT_FILE="$SCRIPT_DIR/tech-news/prompt.md"
+WORK_DIR="/tmp/tech-news-work"
 HTML_FILE="/tmp/tech-news.html"
+PIPELINE="$SCRIPT_DIR/tech-news/pipeline.py"
 DATE=$(date '+%Y-%m-%d')
+
+EXTRACT_MODEL="claude-haiku-4-5-20251001"
+RANK_MODEL="claude-opus-4-8"
+
+# The prompt/schema files are cat'd unchecked below — fail fast before any
+# fetch or extraction work rather than feed claude an empty prompt.
+for f in tech-news/extraction-prompt.md tech-news/extraction-schema.json \
+         tech-news/ranking-prompt.md tech-news/ranking-schema.json; do
+  [[ -s "$SCRIPT_DIR/$f" ]] || { echo "$f missing or empty" >&2; exit 1; }
+done
+
+# Body-character budget per extraction chunk. THE runtime lever: smaller
+# chunks mean more (but faster, more reliable) haiku calls; the whole run must
+# stay inside the DAG's 5400s timeout. Must also stay well under ARG_MAX
+# (~1MB) — the chunk JSON travels inline in the prompt argument, since the
+# extraction calls run tool-less and cannot read files.
+CHUNK_BUDGET="${TECH_NEWS_CHUNK_BUDGET:-80000}"
 
 # 1. Fetch 7 days of tech-news mail. Primary: the local msgvault archive —
 # reads touch Gmail zero times, so the gws exit-5 failure mode (~100 sequential
@@ -46,42 +71,122 @@ if (( count < 30 )); then
   exit 1
 fi
 
-# 2. Render
-[[ -f "$PROMPT_FILE" ]] || { echo "missing $PROMPT_FILE" >&2; exit 1; }
+# 2. Chunk. WORK_DIR keeps every intermediate (chunks, claude envelopes,
+# validated items, merged list, ranking) for post-mortems; it is rebuilt per
+# run so nothing stale leaks across weeks.
+rm -rf "$WORK_DIR"
 rm -f "$HTML_FILE"
+mkdir -p "$WORK_DIR/chunks" "$WORK_DIR/items"
+"$PYTHON3" "$PIPELINE" chunk --input "$DATA_FILE" \
+    --outdir "$WORK_DIR/chunks" --budget "$CHUNK_BUDGET" || {
+  echo "chunking failed" >&2; exit 1;
+}
 
-prompt=$(sed -e "s|{DATA_FILE}|$DATA_FILE|g" \
-             -e "s|{DATE}|$DATE|g" "$PROMPT_FILE")
+# 3. Extraction: one haiku call per chunk against the extraction schema,
+# sequential (each claude process is heavy; bounded runtime and readable logs
+# beat parallelism). Two retry layers, deliberately distinct: run_claude_json
+# retries TRANSPORT faults (API blips, hangs) internally — a chunk it still
+# fails on is failed outright, never re-retried here; this loop's attempts
+# are consumed only by semantically INVALID responses (structured_output
+# null, alien message ids), twice, then the chunk is marked failed and the
+# run carries on. The per-attempt cap drops to 300s for this phase only —
+# haiku on a <=80k-char prompt finishes in minutes, and the default 1500s
+# would let one rare hang eat the DAG window multiplied across dozens of
+# calls.
+extraction_prompt=$(cat "$SCRIPT_DIR/tech-news/extraction-prompt.md")
+extraction_schema=$(cat "$SCRIPT_DIR/tech-news/extraction-schema.json")
+saved_timeout=$CLAUDE_TIMEOUT
+CLAUDE_TIMEOUT=300
+failed_msgs=0
+echo "=== Extracting ==="
+for chunk in "$WORK_DIR"/chunks/chunk-*.json; do
+  name=$(basename "$chunk" .json)
+  ok=0
+  for attempt in 1 2 3; do
+    run_claude_json "$EXTRACT_MODEL" "$extraction_schema" \
+        "$extraction_prompt"$'\n'"$(cat "$chunk")" \
+        > "$WORK_DIR/$name.envelope.json"
+    rc=$?
+    if (( rc != 0 )); then
+      echo "$name: transport failure after internal retries (rc=$rc)" >&2
+      break
+    fi
+    if "$PYTHON3" "$PIPELINE" extract-validate --chunk "$chunk" \
+         --envelope "$WORK_DIR/$name.envelope.json" \
+         --output "$WORK_DIR/items/$name.json"; then
+      ok=1; break
+    fi
+    echo "$name: invalid response (attempt $attempt/3)" >&2
+  done
+  if (( ! ok )); then
+    n=$(jq length "$chunk")
+    echo "$name: failed after 3 attempts — its $n messages count as unextracted" >&2
+    failed_msgs=$((failed_msgs + n))
+  fi
+done
+CLAUDE_TIMEOUT=$saved_timeout
 
-echo "=== Rendering ==="
-run_claude "$prompt" 2>&1 | tee /tmp/tech-news.log
-
-if [[ ! -s "$HTML_FILE" ]]; then
-  echo "$HTML_FILE missing or empty — skipping send" >&2
+# 4. Coverage gate, script-computed, before any network or ranking work: a
+# failed chunk counts all its messages as unextracted; more than 10% missing
+# means the digest would silently under-read the week — abort, send nothing,
+# fail into the autofix path.
+if (( failed_msgs * 10 > count )); then
+  echo "coverage gate: $failed_msgs of $count messages unextracted (>10%) — aborting" >&2
   exit 1
 fi
+echo "coverage: $((count - failed_msgs))/$count messages extracted" >&2
 
-# Non-empty isn't enough: a refusal, apology, or fenced-markdown render would
-# otherwise be emailed as-is. Require the ranked list and the footnote.
-if ! grep -qi "<li" "$HTML_FILE" || ! grep -qi "footnote" "$HTML_FILE"; then
-  echo "rendered HTML fails sanity check (no <li>/Footnote) — skipping send" >&2
-  exit 1
-fi
+# 5+6. Canonicalise links (resolve tracking wrappers, strip utm_*/ref/click
+# ids; failures keep the wrapped URL, linkless items get the Gmail deep-link)
+# and merge exact duplicates (same canonical URL) in code. Judgment
+# clustering stays in the ranking call.
+"$PYTHON3" "$PIPELINE" merge --items-dir "$WORK_DIR/items" \
+    --data "$DATA_FILE" --output "$WORK_DIR/merged.json" || {
+  echo "merge failed" >&2; exit 1;
+}
 
-# Coverage observability (soft — never blocks send). The prompt asks the model
-# to record how many of the fetched messages it actually processed. A healthy
-# run reads all of them; a number well below $count means the ranking saw only
-# part of the week. Logged, not enforced — a count quibble shouldn't lose a
-# real digest, but it surfaces in the dagu logs if coverage degrades.
-processed=$(grep -oiE 'coverage: processed=[0-9]+' "$HTML_FILE" | grep -oE '[0-9]+' | head -1)
-if [[ -n "$processed" ]]; then
-  echo "coverage: model processed $processed of $count fetched messages" >&2
-  (( processed < count )) && echo "WARN: incomplete coverage ($processed/$count)" >&2
-else
-  echo "WARN: no coverage marker in render" >&2
-fi
+# 7. Ranking: ONE opus call over the compact non-skip item list ({id, title,
+# tldr, source, band} — no bodies). Same retry split as extraction: a
+# transport failure surviving run_claude_json's internal retries aborts
+# outright; only invalid responses consume this loop's attempts. Final
+# failure aborts the send. Schema-valid ranking output is the send gate — it
+# replaces the old grep-for-<li>/Footnote sanity checks. 900s cap: far
+# smaller job than the old whole-corpus render's 1500s.
+ranking_prompt=$(cat "$SCRIPT_DIR/tech-news/ranking-prompt.md")
+ranking_schema=$(cat "$SCRIPT_DIR/tech-news/ranking-schema.json")
+candidates=$("$PYTHON3" "$PIPELINE" ranking-input --merged "$WORK_DIR/merged.json") || {
+  echo "ranking-input failed" >&2; exit 1;
+}
+CLAUDE_TIMEOUT=900
+echo "=== Ranking ==="
+ok=0
+for attempt in 1 2 3; do
+  run_claude_json "$RANK_MODEL" "$ranking_schema" \
+      "$ranking_prompt"$'\n'"$candidates" > "$WORK_DIR/ranking.envelope.json"
+  rc=$?
+  if (( rc != 0 )); then
+    echo "ranking: transport failure after internal retries (rc=$rc)" >&2
+    break
+  fi
+  if "$PYTHON3" "$PIPELINE" rank-validate --merged "$WORK_DIR/merged.json" \
+       --envelope "$WORK_DIR/ranking.envelope.json" \
+       --output "$WORK_DIR/ranking.json"; then
+    ok=1; break
+  fi
+  echo "ranking: invalid response (attempt $attempt/3)" >&2
+done
+(( ok )) || { echo "ranking failed after 3 attempts — nothing sent" >&2; exit 1; }
+CLAUDE_TIMEOUT=$saved_timeout
 
-# 3. Send
+# 8. Render the HTML template in code — the model emits no HTML; titles,
+# tldrs, and urls resolve from the extracted items, footnote counts are
+# script-computed.
+"$PYTHON3" "$PIPELINE" render --merged "$WORK_DIR/merged.json" \
+    --ranking "$WORK_DIR/ranking.json" --fetched "$count" --date "$DATE" \
+    --output "$HTML_FILE" || { echo "render failed" >&2; exit 1; }
+[[ -s "$HTML_FILE" ]] || { echo "$HTML_FILE missing or empty — skipping send" >&2; exit 1; }
+
+# 9. Send
 echo "=== Sending ==="
 "$GWS" gmail +send \
     --to "$NOTIFY_EMAIL" \

@@ -99,7 +99,7 @@ Local [Dagu](https://dagu.cloud/) instance runs the schedules in [`dagu/`](dagu/
 | `droplet-watchdog`      | Every 4 hours        | Emails + macOS-notifies if the `dev` DigitalOcean droplet has been up >24h                            |
 | `workflow-digest`       | Daily at 04:00       | [`dagu-digest.sh`](scripts/dagu-digest.sh) — summarises 24h (7d for weekly DAGs) status, mails it     |
 | `jobs-digest`           | Saturday at 03:00    | Vets last 7d of `label:jobs` mail via `claude -p` against target-role criteria; HTML email            |
-| `tech-news-digest`      | Saturday at 03:10    | Ranks last 7d of `label:tech-news` mail via `claude -p` into a single HTML email (03:10, off the 03:00 Gmail spike) |
+| `tech-news-digest`      | Saturday at 03:10    | Extracts stories from last 7d of `label:tech-news` mail via chunked `claude -p` calls, one ranking call, HTML rendered in-script (03:10, off the 03:00 Gmail spike) |
 | `tad-pipeline`          | Tue–Sat at 04:30 UTC | Runs `uv run tad pipeline run -v` in the TAD repo                                                     |
 | `tad-daily-code-review` | Daily at 03:00       | Sweeps non-`/auto-task` commits on `main`, ships safe Minor/Nit autofixes via auto-merged PR, escalates Critical/Major as a review PR (email fallback) |
 

@@ -105,6 +105,43 @@ run_claude() {
   rm -f "$cap"; return "$rc"
 }
 
+# Structured-output sibling of run_claude for script-driven pipelines:
+# run_claude_json <model> <json-schema> <prompt>. One tool-less claude call,
+# schema-enforced output, the claude JSON envelope printed on a CLEAN stdout —
+# callers parse .structured_output from it. stderr is kept separate and
+# replayed after each attempt: merging (2>&1) would corrupt the JSON, so the
+# transient-retry check keys on the exit code and the captured streams, never
+# on a merged stdout. Flag order matters: the positional prompt must precede
+# the variadic --tools flag or it gets swallowed as a tool name. A refusal or
+# schema miss exits 0 with structured_output == null — semantic validity is
+# the CALLER's check; this function only handles transport. Same per-attempt
+# wall-clock cap and transient-retry policy as run_claude.
+run_claude_json() {
+  local model="$1" schema="$2" prompt="$3"
+  local attempt rc out err
+  out=$(mktemp -t run_claude_json.XXXXXX)
+  err=$(mktemp -t run_claude_json.err.XXXXXX)
+  for ((attempt = 1; attempt <= CLAUDE_MAX_ATTEMPTS; attempt++)); do
+    : > "$out"; : > "$err"
+    _run_with_timeout "$CLAUDE_TIMEOUT" \
+      "$CLAUDE" -p "$prompt" --model "$model" \
+      --output-format json --json-schema "$schema" --tools "" \
+      < /dev/null > "$out" 2> "$err"
+    rc=$?
+    cat "$err" >&2
+    if (( rc == 0 )); then cat "$out"; rm -f "$out" "$err"; return 0; fi
+    if (( attempt < CLAUDE_MAX_ATTEMPTS )) \
+       && { (( rc == 124 || rc == 137 )) \
+            || grep -qiE 'API Error|connection closed|connection reset|socket connection|overloaded|rate.?limit|read timed out|request timed out' "$err" "$out"; }; then
+      echo "[run_claude_json] transient failure (attempt ${attempt}/${CLAUDE_MAX_ATTEMPTS}, rc=${rc}); retrying after $((attempt * 30))s backoff." >&2
+      sleep $((attempt * 30))
+      continue
+    fi
+    rm -f "$out" "$err"; return "$rc"
+  done
+  rm -f "$out" "$err"; return "$rc"
+}
+
 # Append a fallback JSONL line iff claude never recorded one for this run.
 record_fallback() {
   local state_file="$1" dag="$2" run_id="$3" ts="$4" outcome="$5" note="$6"

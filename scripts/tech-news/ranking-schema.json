@@ -1,0 +1,17 @@
+{
+  "type": "object",
+  "properties": {
+    "ranked": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "array",
+        "minItems": 1,
+        "items": {"type": "string"}
+      }
+    },
+    "biggest_cut": {"type": "string"}
+  },
+  "required": ["ranked", "biggest_cut"],
+  "additionalProperties": false
+}

@@ -1,0 +1,23 @@
+{
+  "type": "object",
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": {"type": "string"},
+          "tldr": {"type": "string"},
+          "source": {"type": "string"},
+          "url": {"type": "string"},
+          "band": {"type": "string", "enum": ["must-read", "worth-knowing", "skip"]},
+          "message_id": {"type": "string"}
+        },
+        "required": ["title", "tldr", "source", "url", "band", "message_id"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["items"],
+  "additionalProperties": false
+}
