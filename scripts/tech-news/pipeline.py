@@ -9,7 +9,6 @@ the pinned $PYTHON3).
 
 import argparse
 import glob
-import html
 import json
 import os
 import re
@@ -18,6 +17,10 @@ import time
 import urllib.error
 import urllib.request
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                "..", "lib"))
+from digest_common import chunk_messages, esc  # noqa: E402
 
 # Params that only identify the click, never the content. utm_* is matched by
 # prefix; the rest exactly.
@@ -210,7 +213,6 @@ def render_html(merged, ranking, counts, fetched, date):
     """Fragment HTML, same shape the model used to emit: h1, one ol of ranked
     entries, h2 Footnote, p. Each group renders its primary item's content;
     the other members only contribute their source names."""
-    esc = lambda s: html.escape(s, quote=False)
     by_id = {g["id"]: g for g in merged}
     lines = [f"<h1>Tech-news digest — week ending {esc(date)}</h1>", "<ol>"]
     for group in ranking["ranked"]:
@@ -219,7 +221,7 @@ def render_html(merged, ranking, counts, fetched, date):
         for g in (by_id[iid] for iid in group):
             sources += [s for s in g["sources"] if s not in sources]
         lines.append(
-            f'<li><a href="{html.escape(primary["url"])}">'
+            f'<li><a href="{esc(primary["url"], quote=True)}">'
             f'<strong>{esc(primary["title"])}</strong></a>'
             f' <em>({esc(", ".join(sources))})</em><br>'
             f'{esc(primary["tldr"])}</li>')
@@ -229,24 +231,6 @@ def render_html(merged, ranking, counts, fetched, date):
               f'{counts["dropped"]} dropped as filler. '
               f'{esc(ranking["biggest_cut"])}</p>']
     return "\n".join(lines) + "\n"
-
-
-def chunk_messages(messages, budget):
-    """Split messages into chunks by a body-character budget. Fixed-N chunking
-    would produce wildly uneven prompts (aggregator bodies run 30-100k chars,
-    essays a few KB); a char budget keeps per-call size predictable. A single
-    oversized message still gets its own chunk — never dropped."""
-    chunks, cur, cur_size = [], [], 0
-    for m in messages:
-        size = len(m.get("body", ""))
-        if cur and cur_size + size > budget:
-            chunks.append(cur)
-            cur, cur_size = [], 0
-        cur.append(m)
-        cur_size += size
-    if cur:
-        chunks.append(cur)
-    return chunks
 
 
 # --- CLI (wiring around the functions above; exercised end-to-end, not unit

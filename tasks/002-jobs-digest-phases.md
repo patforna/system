@@ -1,7 +1,7 @@
 ---
 title: Restructure jobs digest into script-driven phases
 date: 2026-07-07
-status: ready-for-dev
+status: done
 type: tech
 ---
 
@@ -44,3 +44,17 @@ Mirror scripts/tech-news/ for jobs: reuse run_claude_json and the pipeline patte
 - The worktree needs the git-crypt key symlinked into its git dir or private/ won't decrypt (see private/GOTCHAS.md, 07-06 entry) — already handled by whoever set up the worktree.
 - Do not send email, run msgvault sync, or hit the live mailbox. Verify with fixture JSON (fake recruiter emails) and few/cheap real model calls (haiku extraction probes, at most one opus scoring probe). WebFetch against one real careers URL in a probe is fine.
 - Out of scope: the item-archive line and cross-week dedup (deferred to observation first).
+
+## Implementation notes
+
+- Step-1 probe result: structured output DOES compose with tool use. A live `claude -p --model claude-opus-4-8 --json-schema '<schema>' --tools WebFetch` call runs its WebFetch turns and still returns a non-null `.structured_output`. So the scoring stage is ONE agentic call, not two. Verified in the e2e below (scoring envelope `structured_output != null` true).
+- run_claude_json gained an optional 4th arg `tools` (default "" — existing tech-news/extraction callers unchanged). A non-empty value (e.g. "WebFetch") also flips on `--permission-mode bypassPermissions` so the tool runs headless. `--tools` stays last so the variadic flag consumes only the tool list.
+- Shared, non-secret helpers (body-char `chunk_messages`, HTML `esc`) were factored into scripts/lib/digest_common.py; both tech-news and jobs import them. tech-news pipeline.py shrank accordingly; its 40 tests still pass (shared-refactor regression proof).
+- Placement: jobs prompts, schemas, pipeline.py, and tests all live under private/scripts/jobs-digest/ (git-crypt — verified `git check-attr filter` reports git-crypt on all six). Only cost is code encrypted at rest on GitHub, acceptable for personal tooling. Shared scripts/lib/ helpers stay public.
+- Hard-filters in code: rejected-title blocklist (Senior EM / Engineering Manager / Senior Engineering Manager / Staff EM) and stated base comp clearly below the CHF floor. Rejected roles are retained with a reason so the rejected bucket + footnote counts are script-computed. Judgment filters (tech-as-supporting-function, anti-domain) stay in the scoring call.
+- Empty-survivor path: when nothing survives the hard-filters, the scoring call is skipped and a rejected-only digest is rendered rather than sending an opus call an empty list.
+- Timeouts: 300s/attempt extraction (haiku, small chunks), 1200s/attempt scoring (opus + WebFetch headroom); both fit 3 attempts + backoff inside the DAG's 5400s window.
+- Verification, no email sent and no live-mailbox access:
+  - 35 stdlib unit tests, private/scripts/jobs-digest/test_pipeline.py (pure logic, injected fakes). tech-news 40 tests still green.
+  - Full phase-level e2e against a 3-message fixture (founding-eng survivor, Senior-EM hard-reject, newsletter-no-role) with real haiku extraction + real opus scoring (WebFetch on): extraction split 2 roles and dropped the newsletter, merge hard-rejected the Senior EM, scoring returned schema-valid JSON (founding eng 9/10 vetted, link_unverified flagged for the placeholder URL), render produced all three buckets + footnote + subject "1 vetted, 0 borderline, 1 rejected".
+- Per private/GOTCHAS.md convention this counts as unproven until the first clean scheduled Saturday 03:00 run.

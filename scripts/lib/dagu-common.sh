@@ -106,7 +106,7 @@ run_claude() {
 }
 
 # Structured-output sibling of run_claude for script-driven pipelines:
-# run_claude_json <model> <json-schema> <prompt>. One tool-less claude call,
+# run_claude_json <model> <json-schema> <prompt> [tools]. One claude call,
 # schema-enforced output, the claude JSON envelope printed on a CLEAN stdout —
 # callers parse .structured_output from it. stderr is kept separate and
 # replayed after each attempt: merging (2>&1) would corrupt the JSON, so the
@@ -116,16 +116,29 @@ run_claude() {
 # schema miss exits 0 with structured_output == null — semantic validity is
 # the CALLER's check; this function only handles transport. Same per-attempt
 # wall-clock cap and transient-retry policy as run_claude.
+#
+# The 4th arg selects the built-in tool set: default "" disables all tools (the
+# pure-judgment extraction/ranking path — unchanged for existing callers). Pass
+# e.g. "WebFetch" for an agentic structured call that may verify against the web
+# (jobs scoring); that also flips on --permission-mode bypassPermissions so the
+# tool runs headless. Structured output composes with tool use — the model runs
+# its tool turns, then emits the schema-bound final answer. --tools stays LAST so
+# the variadic flag consumes only the tool list.
 run_claude_json() {
-  local model="$1" schema="$2" prompt="$3"
-  local attempt rc out err
+  local model="$1" schema="$2" prompt="$3" tools="${4:-}"
+  local attempt rc out err perm=()
+  [[ -n "$tools" ]] && perm=(--permission-mode bypassPermissions)
+  # perm below MUST use the ${arr[@]+"${arr[@]}"} idiom, not a bare "${perm[@]}":
+  # dagu runs these scripts under /bin/bash 3.2.57, where expanding an empty
+  # array under `set -u` aborts with "unbound variable" — killing the tool-less
+  # default path (all extraction/ranking calls, both digests).
   out=$(mktemp -t run_claude_json.XXXXXX)
   err=$(mktemp -t run_claude_json.err.XXXXXX)
   for ((attempt = 1; attempt <= CLAUDE_MAX_ATTEMPTS; attempt++)); do
     : > "$out"; : > "$err"
     _run_with_timeout "$CLAUDE_TIMEOUT" \
       "$CLAUDE" -p "$prompt" --model "$model" \
-      --output-format json --json-schema "$schema" --tools "" \
+      --output-format json --json-schema "$schema" ${perm[@]+"${perm[@]}"} --tools "$tools" \
       < /dev/null > "$out" 2> "$err"
     rc=$?
     cat "$err" >&2

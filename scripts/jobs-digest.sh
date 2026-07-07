@@ -2,65 +2,190 @@
 set -uo pipefail
 
 # Weekly jobs digest. Vets last 7 days of label:jobs mail against Patric's
-# target-role criteria, validates top candidates via WebFetch, sends an HTML
-# email to NOTIFY_EMAIL with vetted / borderline / rejected buckets.
-# Designed to run via dagu (see dagu/jobs-digest.yaml).
+# target-role criteria and emails a vetted / borderline / rejected shortlist to
+# NOTIFY_EMAIL. Designed to run via dagu (see dagu/jobs-digest.yaml).
 #
-# claude -p renders the HTML and subject to /tmp/jobs-digest.{html,subject};
-# this script then sends. Keeping the +send out of the model loop avoids alias /
-# PATH surprises in the Bash tool's shell (e.g. zsh `alias cat='bat'` silently
-# emptying --body).
+# The script owns the pipeline; claude only does judgment. Phases: chunked
+# structured extraction (haiku, tool-less), a script-computed coverage gate,
+# code-side exact-duplicate merge and mechanical hard-filters (EM/management
+# titles, sub-floor base comp), ONE agentic scoring call (opus, WebFetch allowed
+# to verify top candidates) returning schema-bound JSON, and a code-rendered
+# three-bucket HTML email. The model never emits HTML or self-reports counts —
+# which removes the old prompt-orchestrated subagent fan-out, model-written HTML
+# behind grep gates, and self-reported figures. See
+# private/scripts/jobs-digest/pipeline.py.
+#
+# Keeping +send out of the model loop avoids alias / PATH surprises in the Bash
+# tool's shell (e.g. zsh `alias cat='bat'` silently emptying --body).
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/dagu-common.sh"
 require_notify_email
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+# Prompts, schemas, and the pipeline module live under private/ (git-crypt):
+# they encode personal role/comp criteria that must not sit plaintext in a
+# public repo.
+JOBS_DIR="$SCRIPT_DIR/../private/scripts/jobs-digest"
+PIPELINE="$JOBS_DIR/pipeline.py"
 DATA_FILE="/tmp/jobs-digest-data.json"
+WORK_DIR="/tmp/jobs-digest-work"
 HTML_FILE="/tmp/jobs-digest.html"
 SUBJECT_FILE="/tmp/jobs-digest.subject"
 DATE=$(date '+%Y-%m-%d')
 
-# 1. Fetch 7 days of jobs-labelled mail
+EXTRACT_MODEL="claude-haiku-4-5-20251001"
+SCORE_MODEL="claude-opus-4-8"
+
+# The prompt/schema files are cat'd unchecked below — fail fast before any fetch
+# or extraction rather than feed claude an empty prompt.
+[[ -f "$PIPELINE" ]] || { echo "missing $PIPELINE" >&2; exit 1; }
+for f in extraction-prompt.md extraction-schema.json \
+         scoring-prompt.md scoring-schema.json; do
+  [[ -s "$JOBS_DIR/$f" ]] || { echo "$f missing or empty" >&2; exit 1; }
+done
+
+# Body-character budget per extraction chunk. A quiet jobs week is ~18 msgs of a
+# few KB each, so this is normally a single chunk; the budget only splits a
+# pathological flood. Stays well under ARG_MAX (~1MB) — the chunk JSON travels
+# inline in the prompt argument, since the tool-less extraction cannot read files.
+CHUNK_BUDGET="${JOBS_CHUNK_BUDGET:-80000}"
+
+# 1. Fetch 7 days of jobs-labelled mail (unchanged: gws fetcher, count==0 guard).
 "$PYTHON3" "$SCRIPT_DIR/lib/fetch-gmail-label.py" \
     --days 7 --label jobs --output "$DATA_FILE" || {
   echo "fetch failed" >&2; exit 1;
 }
 
-# A genuinely quiet week is possible (~18 msgs is the norm), but zero means
-# the Gmail filter or label broke — fail into the autofix path rather than
-# email a hollow digest.
+# A genuinely quiet week is possible (~18 msgs is the norm), but zero means the
+# Gmail filter or label broke — fail into the autofix path rather than email a
+# hollow digest.
 count=$(jq length "$DATA_FILE")
 if (( count == 0 )); then
   echo "0 messages fetched — jobs filter/label likely broken" >&2
   exit 1
 fi
 
-# 2. Vet, validate, compose
-# Prompt lives under private/ (git-crypt): it encodes personal role/comp
-# criteria that must not sit plaintext in this public repo.
-PROMPT_FILE="$SCRIPT_DIR/../private/scripts/jobs-digest/prompt.md"
-[[ -f "$PROMPT_FILE" ]] || { echo "missing $PROMPT_FILE" >&2; exit 1; }
-
+# 2. Chunk. WORK_DIR keeps every intermediate (chunks, envelopes, validated
+# roles, merged list, scoring) for post-mortems; rebuilt per run so nothing
+# stale leaks across weeks.
+rm -rf "$WORK_DIR"
 rm -f "$HTML_FILE" "$SUBJECT_FILE"
+mkdir -p "$WORK_DIR/chunks" "$WORK_DIR/items"
+"$PYTHON3" "$PIPELINE" chunk --input "$DATA_FILE" \
+    --outdir "$WORK_DIR/chunks" --budget "$CHUNK_BUDGET" || {
+  echo "chunking failed" >&2; exit 1;
+}
 
-prompt=$(sed -e "s|{DATA_FILE}|$DATA_FILE|g" \
-             -e "s|{DATE}|$DATE|g" "$PROMPT_FILE")
+# 3. Extraction: one haiku call per chunk against the extraction schema,
+# tool-less, sequential. Two retry layers, deliberately distinct:
+# run_claude_json retries TRANSPORT faults (API blips, hangs) internally — a
+# chunk it still fails on is failed outright; this loop's attempts are consumed
+# only by semantically INVALID responses (structured_output null, alien message
+# ids, empty from a multi-message chunk), twice, then the chunk is marked failed
+# and the run carries on. Per-attempt cap drops to 300s here — haiku on a small
+# jobs chunk finishes in minutes.
+extraction_prompt=$(cat "$JOBS_DIR/extraction-prompt.md")
+extraction_schema=$(cat "$JOBS_DIR/extraction-schema.json")
+saved_timeout=$CLAUDE_TIMEOUT
+CLAUDE_TIMEOUT=300
+failed_msgs=0
+echo "=== Extracting ==="
+for chunk in "$WORK_DIR"/chunks/chunk-*.json; do
+  name=$(basename "$chunk" .json)
+  ok=0
+  for attempt in 1 2 3; do
+    run_claude_json "$EXTRACT_MODEL" "$extraction_schema" \
+        "$extraction_prompt"$'\n'"$(cat "$chunk")" \
+        > "$WORK_DIR/$name.envelope.json"
+    rc=$?
+    if (( rc != 0 )); then
+      echo "$name: transport failure after internal retries (rc=$rc)" >&2
+      break
+    fi
+    if "$PYTHON3" "$PIPELINE" extract-validate --chunk "$chunk" \
+         --envelope "$WORK_DIR/$name.envelope.json" \
+         --output "$WORK_DIR/items/$name.json"; then
+      ok=1; break
+    fi
+    echo "$name: invalid response (attempt $attempt/3)" >&2
+  done
+  if (( ! ok )); then
+    n=$(jq length "$chunk")
+    echo "$name: failed after 3 attempts — its $n messages count as unextracted" >&2
+    failed_msgs=$((failed_msgs + n))
+  fi
+done
+CLAUDE_TIMEOUT=$saved_timeout
 
-echo "=== Rendering jobs digest ==="
-run_claude "$prompt" 2>&1 | tee /tmp/jobs-digest.log
-
-if [[ ! -s "$HTML_FILE" ]]; then
-  echo "jobs digest: $HTML_FILE missing or empty — not sending" >&2
+# 4. Coverage gate, script-computed, before scoring: a failed chunk counts all
+# its messages as unextracted; more than 10% missing means the digest would
+# silently under-read the week — abort, send nothing, fail into autofix.
+if (( failed_msgs * 10 > count )); then
+  echo "coverage gate: $failed_msgs of $count messages unextracted (>10%) — aborting" >&2
   exit 1
 fi
+echo "coverage: $((count - failed_msgs))/$count messages extracted" >&2
 
-# Non-empty isn't enough: a refusal, apology, or fenced-markdown render would
-# otherwise be emailed as-is. Require the bucket headings and the footnote.
-if ! grep -qi "<h2" "$HTML_FILE" || ! grep -qi "footnote" "$HTML_FILE"; then
-  echo "jobs digest: HTML fails sanity check (no <h2>/Footnote) — not sending" >&2
-  exit 1
+# 5+6. Merge exact duplicates (same posting_url, else same company + normalised
+# title) and apply mechanical hard-filters (EM/management titles, stated base
+# below the CHF floor) in code. Filtered-out roles are retained with a reason so
+# the rejected bucket and footnote counts are script-computed. Judgment filters
+# (tech-as-supporting-function, anti-domain) stay in the scoring call.
+"$PYTHON3" "$PIPELINE" merge --items-dir "$WORK_DIR/items" \
+    --data "$DATA_FILE" --output "$WORK_DIR/merged.json" || {
+  echo "merge failed" >&2; exit 1;
+}
+
+# 7. Scoring: ONE agentic opus call over the survivor candidates. Unlike
+# extraction it runs tools-ENABLED (WebFetch) so it can verify top candidates'
+# title/level/comp/location/still-open before scoring; structured output still
+# composes with the tool turns. Same retry split as extraction. Schema-valid
+# scoring output is the send gate — it replaces the old grep-for-<h2>/Footnote
+# checks. When nothing survives the hard-filters there is nothing to score —
+# skip the call and render a rejected-only digest. 1200s cap gives WebFetch
+# headroom while 3*1200 + 90s backoff stays inside the DAG's 5400s window.
+candidates=$("$PYTHON3" "$PIPELINE" scoring-input --merged "$WORK_DIR/merged.json") || {
+  echo "scoring-input failed" >&2; exit 1;
+}
+if [[ "$candidates" == "[]" ]]; then
+  echo "no candidates survived hard-filters — rendering rejected-only digest" >&2
+  echo '{"scored": []}' > "$WORK_DIR/scoring.json"
+else
+  scoring_prompt=$(cat "$JOBS_DIR/scoring-prompt.md")
+  scoring_schema=$(cat "$JOBS_DIR/scoring-schema.json")
+  CLAUDE_TIMEOUT=1200
+  echo "=== Scoring ==="
+  ok=0
+  for attempt in 1 2 3; do
+    run_claude_json "$SCORE_MODEL" "$scoring_schema" \
+        "$scoring_prompt"$'\n'"$candidates" WebFetch \
+        > "$WORK_DIR/scoring.envelope.json"
+    rc=$?
+    if (( rc != 0 )); then
+      echo "scoring: transport failure after internal retries (rc=$rc)" >&2
+      break
+    fi
+    if "$PYTHON3" "$PIPELINE" score-validate --merged "$WORK_DIR/merged.json" \
+         --envelope "$WORK_DIR/scoring.envelope.json" \
+         --output "$WORK_DIR/scoring.json"; then
+      ok=1; break
+    fi
+    echo "scoring: invalid response (attempt $attempt/3)" >&2
+  done
+  (( ok )) || { echo "scoring failed after 3 attempts — nothing sent" >&2; exit 1; }
+  CLAUDE_TIMEOUT=$saved_timeout
 fi
 
+# 8. Render the three-bucket HTML and the subject in code — the model emits no
+# HTML; bucket counts and the footnote breakdown are script-computed.
+"$PYTHON3" "$PIPELINE" render --merged "$WORK_DIR/merged.json" \
+    --scoring "$WORK_DIR/scoring.json" --fetched "$count" --date "$DATE" \
+    --output "$HTML_FILE" --subject-output "$SUBJECT_FILE" || {
+  echo "render failed" >&2; exit 1;
+}
+[[ -s "$HTML_FILE" ]] || { echo "$HTML_FILE missing or empty — skipping send" >&2; exit 1; }
+
+# 9. Send
 if [[ -s "$SUBJECT_FILE" ]]; then
   SUBJECT=$(tr -d '\n' < "$SUBJECT_FILE")
 else
