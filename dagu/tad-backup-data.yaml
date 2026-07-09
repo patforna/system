@@ -1,0 +1,13 @@
+# 05:30 UTC (pinned, DST-proof). The pipeline runs at 04:30 UTC and, with its
+# 2x300s retries, is done by ~04:50; this sits an hour clear. Daily incl. Sun/Mon
+# (which have no pipeline run) keeps "keep 7 daily" meaningful — non-pipeline
+# nights dedup to near-free. Runbook: docs/backup-runbook.md in the tad repo.
+schedule: "CRON_TZ=UTC 30 5 * * *"
+
+steps:
+  - name: tad-backup-data
+    # brew shellenv puts restic (/opt/homebrew/bin) on PATH; the script sources
+    # secrets, runs the network-readiness preflight, and exits 0 (logged) while
+    # backups are unconfigured. Retry policy + failure handler inherited from
+    # base.yaml — no bespoke alerting; a real failure exits non-zero.
+    command: bash -c 'eval "$(/opt/homebrew/bin/brew shellenv)" && "${HOME}/github/tad/scripts/backup.sh" data'

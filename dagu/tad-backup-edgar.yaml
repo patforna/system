@@ -1,0 +1,13 @@
+# 06:30 UTC Sundays — weekly, staggered an hour after the nightly data run
+# (05:30 UTC) so the two never hold restic's exclusive repo lock at once
+# (concurrent forget --prune would collide). The EDGAR cache churns slowly and
+# is ~28GB, so weekly is enough. Runbook: docs/backup-runbook.md in the tad repo.
+schedule: "CRON_TZ=UTC 30 6 * * 0"
+
+steps:
+  - name: tad-backup-edgar
+    # brew shellenv puts restic (/opt/homebrew/bin) on PATH; the script sources
+    # secrets, runs the network-readiness preflight, and exits 0 (logged) while
+    # backups are unconfigured. Retry policy + failure handler inherited from
+    # base.yaml — no bespoke alerting; a real failure exits non-zero.
+    command: bash -c 'eval "$(/opt/homebrew/bin/brew shellenv)" && "${HOME}/github/tad/scripts/backup.sh" edgar'
