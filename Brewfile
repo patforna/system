@@ -55,6 +55,7 @@ brew "zsh-syntax-highlighting"
 uv "rumdl"
 uv "shot-scraper"
 npm "@google/clasp"
+npm "svg-term-cli"
 mas "Amphetamine", id: 937984704
 mas "Kindle", id: 302584613
 mas "Pixelmator Pro", id: 1289583905
