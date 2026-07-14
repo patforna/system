@@ -1,9 +1,9 @@
-# 03:10 Sat, not 03:00, to lift tech-news's heavy ~100-call gws fan-out off the
-# 03:00 spike it shared with msgvault-sync (daily) and jobs-digest (Sat) — all
-# three hit the same Gmail account. Stays inside the 03:00 pmset wake window:
-# tad-daily-code-review (daily 03:00, long-running) holds the machine awake well
-# past 03:10, and catchup_window covers a sleep race. See scripts/setup-mac-wake.sh.
-schedule: "10 3 * * 6"
+# Roughly weekly — cadence lives in scripts/dagu-jobs.conf; no cron schedule here (see
+# scripts/dagu-reconcile). The old 03:10-Sat pinning existed to lift this job's heavy
+# ~100-call gws fan-out off the 03:00 spike it shared with msgvault-sync and jobs-digest.
+# That contention is gone: the reconciler runs every job serially, so no two can hit the
+# same Gmail account at once. Note this may now land on a weekday rather than Saturday —
+# it summarises the trailing window, so the weekday it arrives on carries no meaning.
 
 # Bound the run defensively — a healthy run is ~20-60 min (chunked extraction
 # dominates); this caps a wedged run. Genuine failures fall through to the

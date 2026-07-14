@@ -1,8 +1,10 @@
-schedule: "0 3 * * *"
+# Roughly daily — cadence lives in scripts/dagu-jobs.conf; no cron schedule here (see
+# scripts/dagu-reconcile).
 
 steps:
   - name: msgvault-sync
     command: $HOME/.local/bin/msgvault sync
-    retry_policy:
-      limit: 2
-      interval_sec: 300
+    # No retry_policy (the old one was limit 2 / interval_sec 300). Its 300s sleeps
+    # elapsed ACROSS suspend cycles, so a 10-minute retry budget became a 5h20m "run"
+    # that still died on DNS. Retry lives in the reconciler now, which only starts a job
+    # when the Mac is awake and online.

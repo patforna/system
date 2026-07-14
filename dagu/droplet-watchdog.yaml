@@ -1,4 +1,7 @@
-schedule: "0 */4 * * *"
+# Every ~4h — cadence lives in scripts/dagu-jobs.conf; no cron schedule here (see
+# scripts/dagu-reconcile). NB this is the one job whose purpose (catching a droplet left
+# running and billing) needs it to run while the Mac is off — it can't, so it is the one
+# genuine candidate to move to an always-on cloud agent.
 
 steps:
   - name: droplet-watchdog

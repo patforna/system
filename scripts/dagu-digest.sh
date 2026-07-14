@@ -1,14 +1,32 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-# Daily digest of dagu DAG runs. Sent via gws gmail to NOTIFY_EMAIL.
-# Designed to run via Dagu once a day (see dagu/workflow-digest.yaml).
+# Daily digest of the dagu jobs. Sent via gws gmail to NOTIFY_EMAIL.
+# Run LAST in the reconciler's serial pass (scripts/dagu-reconcile), so what it reports
+# reflects everything that ran in this same pass.
 #
-# Two states per row: OK / ATTN. Anything that needs human attention
-# (escalation, unhandled failure, scheduler didn't fire) is ATTN; everything
-# else is OK. The row's free-text comment carries the headline; a Details
-# section underneath expands each notable row with the autofix outcome,
-# commit subject, and a GitHub URL when the fix produced a commit.
+# WHAT THIS REPORTS, AND WHY IT CHANGED
+# -------------------------------------
+# It used to report, per DAG, "did the run at the scheduled instant succeed?", taken from
+# dagu's status store. That was wrong twice over on a laptop:
+#
+#   1. dagu 2.7.2 persists `Failed` for a run whose own log says `status=succeeded` after
+#      a retry. So the digest confidently reported failures for work that had completed.
+#   2. "The Mac was asleep at 03:00" is not a failure, but it rendered as one — so the
+#      digest cried wolf, and a monitoring system that cries wolf is worse than none.
+#
+# So it now reports FRESHNESS instead: how long since each job last actually succeeded
+# (a marker touched by dagu itself on success — see base.yaml handler_on.success), against
+# the SLO in scripts/dagu-jobs.conf. The governing principle:
+#
+#   ALERT ON FAILURE-WITH-OPPORTUNITY. NEVER ON ABSENCE-WITHOUT-OPPORTUNITY.
+#
+# A job that is stale because the machine was off or offline is not a problem — it's the
+# design working (being off IS the pause; there is nothing to catch up). A job that is
+# stale *despite* the machine having been awake and online is a real failure. The
+# reconciler records an "opportunity" (its tick file) only when it is awake AND online,
+# which is what lets those two cases be told apart. This is what makes a 3-week holiday
+# generate no noise at all.
 
 CONF="${HOME}/github/system/private/droplet-watchdog.conf"
 [[ -f "$CONF" ]] && source "$CONF"
@@ -16,14 +34,32 @@ CONF="${HOME}/github/system/private/droplet-watchdog.conf"
 NOTIFY_EMAIL="${NOTIFY_EMAIL:-}"
 [[ -z "$NOTIFY_EMAIL" ]] && exit 0
 
-DAGS_DIR="${HOME}/github/system/dagu"
 SYSTEM_REPO="${HOME}/github/system"
-SELF="workflow-digest"
+JOBS_CONF="${SYSTEM_REPO}/scripts/dagu-jobs.conf"
 TODAY=$(date '+%Y-%m-%d')
 
-DAGU="${DAGU:-/opt/homebrew/bin/dagu}"
 AUTOFIX_LOG="${AUTOFIX_LOG:-${HOME}/.local/state/dagu-autofix.jsonl}"
 DAGU_LOG_DIR="${DAGU_LOG_DIR:-${HOME}/Library/Application Support/dagu/logs}"
+MARKER_DIR="${MARKER_DIR:-${HOME}/.local/state/dagu-success}"
+TICK_FILE="${TICK_FILE:-${HOME}/.local/state/dagu-reconcile/last-tick}"
+
+# Pending local drift, written by drift-check on any local run. Path must match
+# DRIFT_PENDING_FILE in scripts/drift-check.
+DRIFT_PENDING_FILE="${DRIFT_PENDING_FILE:-${HOME}/.local/state/drift-pending-$(hostname -s 2>/dev/null || hostname).txt}"
+
+now=$(date +%s)
+
+mtime()   { stat -f %m "$1" 2>/dev/null || echo 0; }
+age_of()  { local m; m=$(mtime "$1"); (( m == 0 )) && { echo -1; return; }; echo $(( now - m )); }
+
+# Compact human duration: 45m / 6h / 3d.
+human() {
+  local s="$1"
+  (( s < 0 ))     && { echo "never"; return; }
+  (( s < 3600 ))  && { echo "$((s / 60))m"; return; }
+  (( s < 172800 ))&& { echo "$((s / 3600))h"; return; }
+  echo "$((s / 86400))d"
+}
 
 # Derive https://github.com/<owner>/<repo> from the system repo's origin.
 github_repo_url() {
@@ -36,226 +72,108 @@ github_repo_url() {
 }
 GITHUB_REPO_URL=$(github_repo_url)
 
-# Autofix entry for a specific run_id. Prints "<outcome>\t<note>\t<commit>"
-# or empty if none. We match by run_id (not by time window) so the digest's
-# narrative for a failed row reflects what autofix did for *that* run, not
-# whatever it last did for the DAG.
-autofix_for_run() {
-  local run_id="$1"
-  [[ -z "$run_id" || ! -f "$AUTOFIX_LOG" ]] && return
-  jq -r --arg rid "$run_id" \
-    'select(.run_id == $rid) | "\(.outcome)\t\(.note)\t\(.commit // "")"' \
-    "$AUTOFIX_LOG" 2>/dev/null | tail -1
-}
-
-# git show -s '%s' for a sha, or empty if the sha doesn't resolve.
-commit_subject() {
-  local sha="$1"
-  [[ -z "$sha" ]] && return
-  git -C "$SYSTEM_REPO" show -s --format='%s' "$sha" 2>/dev/null || true
-}
-
-# Path of the most recent FAILED dag-run dir for a DAG (or empty). We need
-# the failed dir specifically so the Details block surfaces context from the
-# actual failure rather than from a more recent successful run.
+# Most recent FAILED dag-run dir for a DAG (or empty) — context for a job that is stale
+# because it keeps failing, rather than because the Mac was away.
 latest_failed_dagrun_dir() {
+  # NB: split declarations — under `set -u`, bash does not reliably resolve a variable
+  # assigned earlier in the SAME `local` statement.
   local dag="$1"
   local d="${DAGU_LOG_DIR}/${dag}"
-  [[ -d "$d" ]] || return
   local rd toplog
+  [[ -d "$d" ]] || return
   while IFS= read -r rd; do
     toplog=$(ls "$rd"/dag-run_*.log 2>/dev/null | head -1)
     [[ -z "$toplog" ]] && continue
-    if grep -q 'status=failed' "$toplog" 2>/dev/null; then
-      echo "$rd"
-      return
-    fi
+    if grep -q 'status=failed' "$toplog" 2>/dev/null; then echo "$rd"; return; fi
   done < <(ls -td "$d"/dag-run_* 2>/dev/null)
 }
 
-# Show the most useful slice of the failing step's output. Errors usually
-# appear at the top of stderr (followed by usage banners), while the actionable
-# line in stdout typically comes near the end. So head stderr, tail stdout.
+# Errors surface at the top of stderr (followed by usage banners); the actionable line in
+# stdout is usually near the end. So head stderr, tail stdout.
 step_output_tail() {
-  local rundir="$1" dag="$2" max="${3:-10}"
+  local rundir="$1" dag="$2" max="${3:-8}" step_dir err_file out_file printed=0
   [[ -d "$rundir" ]] || return
-  local step_dir
   step_dir=$(ls -d "$rundir"/run_*/ 2>/dev/null | head -1)
   [[ -z "$step_dir" ]] && return
-  local err_file out_file
   err_file=$(ls "$step_dir"/${dag}.*.err 2>/dev/null | head -1)
   out_file=$(ls "$step_dir"/${dag}.*.out 2>/dev/null | head -1)
-  local printed=0
-  if [[ -s "$err_file" ]]; then
-    echo "stderr (first ${max} lines):"
-    head -"$max" "$err_file"
-    printed=1
-  fi
+  if [[ -s "$err_file" ]]; then echo "stderr (first ${max}):"; head -"$max" "$err_file"; printed=1; fi
   if [[ -s "$out_file" ]]; then
     [[ "$printed" == 1 ]] && echo ""
-    echo "stdout (last ${max} lines):"
-    tail -"$max" "$out_file"
+    echo "stdout (last ${max}):"; tail -"$max" "$out_file"
   fi
 }
 
-# Parse a dag-run dirname like `dag-run_20260513_081400Z_<run-id>`.
-rundir_started_utc() {
-  local base
-  base=$(basename "$1")
-  if [[ "$base" =~ dag-run_([0-9]{4})([0-9]{2})([0-9]{2})_([0-9]{2})([0-9]{2})[0-9]{2}Z ]]; then
-    echo "${BASH_REMATCH[1]}-${BASH_REMATCH[2]}-${BASH_REMATCH[3]} ${BASH_REMATCH[4]}:${BASH_REMATCH[5]} UTC"
-  fi
+rundir_run_id() { basename "$1" | sed -E 's/^dag-run_[0-9]+_[0-9]+Z_//'; }
+
+autofix_for_run() {
+  local run_id="$1"
+  [[ -z "$run_id" || ! -f "$AUTOFIX_LOG" ]] && return
+  jq -r --arg rid "$run_id" 'select(.run_id == $rid) | "\(.outcome)\t\(.note)"' "$AUTOFIX_LOG" 2>/dev/null | tail -1
 }
 
-rundir_run_id() {
-  basename "$1" | sed -E 's/^dag-run_[0-9]+_[0-9]+Z_//'
-}
-
-# If the autofix handler itself errored, print the first stderr line.
-handler_crash_line() {
-  local rundir="$1"
-  [[ -d "$rundir" ]] || return
-  local step_dir
-  step_dir=$(ls -d "$rundir"/run_*/ 2>/dev/null | head -1)
-  [[ -z "$step_dir" ]] && return
-  local of_err
-  of_err=$(ls "$step_dir"/onFailure.*.err 2>/dev/null | head -1)
-  [[ -s "$of_err" ]] && head -1 "$of_err"
-}
+tick_age=$(age_of "$TICK_FILE")
 
 attn_count=0
-fixed_count=0
+idle_count=0
 drift_count=0
 rows=""
 details=""
 
-# drift-check --notify exits 0 even when it finds untracked state (drift is an
-# informational reconciliation decision, not a job failure), so a healthy dagu
-# run hides pending drift and this digest would otherwise report drift-check
-# "OK" the same morning a [DRIFT] email lands — a confusing contradiction.
-# drift-check writes the still-pending items here (cleared on a clean run); we
-# read it to surface them under a low-urgency DRIFT marker. Path must match
-# DRIFT_PENDING_FILE in scripts/drift-check.
-DRIFT_PENDING_FILE="${DRIFT_PENDING_FILE:-${HOME}/.local/state/drift-pending-$(hostname -s 2>/dev/null || hostname).txt}"
+while read -r job slo_hours; do
+  [[ -z "$job" || "$job" == \#* ]] && continue
 
-for f in "$DAGS_DIR"/*.yaml; do
-  dag=$(basename "$f" .yaml)
+  marker_file="${MARKER_DIR}/${job}"
+  age=$(age_of "$marker_file")
+  slo_secs=$((slo_hours * 3600))
 
-  schedule=$(awk -F'"' '/^schedule:/ {print $2; exit}' "$f")
-  # Day-of-week is the LAST cron field, not field 5 — a schedule may carry a
-  # CRON_TZ=… prefix (tad-pipeline) that shifts the field positions.
-  dow=$(echo "$schedule" | awk '{print $NF}')
-  if [[ -n "$dow" && "$dow" != "*" ]]; then
-    window="7d"
-  else
-    window="24h"
-  fi
-
-  # Pull both the counts and the *latest* run's status. We gate ATTN on the
-  # latest, not on any failure in the window, so a transient failure that has
-  # since recovered (next scheduled run, or autofix + retry) doesn't keep
-  # nagging until it falls out of the 24h window.
-  read -r runs ok latest_status < <("$DAGU" history "$dag" --last "$window" --format csv 2>/dev/null | awk -F',' '
-    NR>1 {
-      total++
-      if (latest == "") latest = $3
-      if ($3 == "Succeeded") ok++
-    }
-    END { printf "%d %d %s\n", total+0, ok+0, (latest=="" ? "-" : latest) }
-  ')
+  marker_m=$(mtime "$marker_file")
+  due=$(( marker_m + slo_secs ))   # 0 + slo when the job has never succeeded => long overdue
+  tick_m=$(mtime "$TICK_FILE")
 
   marker="OK   "
   comment=""
   detail_block=""
 
-  if [[ "$latest_status" == "Failed" ]]; then
-    rundir=$(latest_failed_dagrun_dir "$dag")
-    failed_at=$(rundir_started_utc "$rundir")
-    failed_run_id=$(rundir_run_id "$rundir")
-    crash_line=$(handler_crash_line "$rundir")
-    out_tail=$(step_output_tail "$rundir" "$dag" 10)
+  if (( age >= 0 && age < slo_secs )); then
+    marker="OK   "
+  elif (( tick_m > 0 && tick_m < due )); then
+    # Stale, but the machine has had NO opportunity since it fell due — it was off or
+    # offline the whole time. This is the design working, not a fault. Never ATTN.
+    marker="IDLE "
+    comment="no opportunity since due — Mac off/offline"
+    idle_count=$((idle_count + 1))
+  else
+    # Stale DESPITE opportunity: the reconciler was awake and online and either ran this
+    # and it failed, or couldn't run it. That is real signal.
+    marker="ATTN "
+    comment="stale despite opportunity"
+    attn_count=$((attn_count + 1))
 
-    af=$(autofix_for_run "$failed_run_id")
-    af_outcome=""
-    af_note=""
-    af_commit=""
-    if [[ -n "$af" ]]; then
-      IFS=$'\t' read -r af_outcome af_note af_commit <<< "$af"
-    fi
-
-    # FIXED: autofix handled it (fixed code, or judged transient). The latest
-    # run on disk is still Failed but the issue is resolved — don't alarm.
-    # ATTN: latest run failed AND autofix can't or didn't resolve it.
-    case "${af_outcome}" in
-      fixed|transient)
-        marker="FIXED"
-        fixed_count=$((fixed_count + 1))
-        ;;
-      *)
-        marker="ATTN "
-        attn_count=$((attn_count + 1))
-        ;;
-    esac
-
-    if [[ -n "$af_outcome" ]]; then
-      # af_note already starts with "<outcome>: ..." per the autofix prompt,
-      # so we pass it through verbatim rather than re-prefixing the outcome.
-      comment="failed at ${failed_at}; ${af_note}"
-      detail_block="  ${dag} (failed at ${failed_at}; ${af_outcome})"$'\n'
-      detail_block+="    ${af_note}"$'\n'
-      if [[ -n "$af_commit" ]]; then
-        subject_line=$(commit_subject "$af_commit")
-        short_sha="${af_commit:0:7}"
-        if [[ -n "$subject_line" ]]; then
-          detail_block+="    commit ${short_sha}: ${subject_line}"$'\n'
-        else
-          detail_block+="    commit ${short_sha}"$'\n'
-        fi
-        if [[ -n "$GITHUB_REPO_URL" ]]; then
-          detail_block+="    ${GITHUB_REPO_URL}/commit/${af_commit}"$'\n'
-        fi
-      fi
-    elif [[ -n "$crash_line" ]]; then
-      comment="failed at ${failed_at}; autofix handler crashed"
-      detail_block="  ${dag} (failed at ${failed_at}; autofix handler crashed)"$'\n'
-      detail_block+="    handler error: ${crash_line}"$'\n'
-    else
-      comment="failed at ${failed_at}; no autofix record"
-      detail_block="  ${dag} (failed at ${failed_at}; no autofix record)"$'\n'
-    fi
-
-    if [[ -n "$out_tail" ]]; then
+    rundir=$(latest_failed_dagrun_dir "$job")
+    if [[ -n "$rundir" ]]; then
+      af=$(autofix_for_run "$(rundir_run_id "$rundir")")
+      af_note=""
+      [[ -n "$af" ]] && IFS=$'\t' read -r _ af_note <<< "$af"
+      detail_block="  ${job} (last success $(human "$age") ago; slo ${slo_hours}h)"$'\n'
+      [[ -n "$af_note" ]] && detail_block+="    ${af_note}"$'\n'
       while IFS= read -r line; do
-        detail_block+="      ${line}"$'\n'
-      done <<< "$out_tail"
-    fi
-
-  elif (( runs == 0 )) && [[ "$dag" != "$SELF" ]]; then
-    last_line=$("$DAGU" status "$dag" 2>/dev/null | head -1)
-    if [[ -z "$last_line" ]]; then
-      comment="never run yet"
-      detail_block="  ${dag} (pending)"$'\n'
-      detail_block+="    No history yet — first scheduled run still ahead."$'\n'
+        [[ -n "$line" ]] && detail_block+="      ${line}"$'\n'
+      done <<< "$(step_output_tail "$rundir" "$job" 8)"
     else
-      marker="ATTN "
-      comment="no runs in ${window} — scheduler may not have fired"
-      attn_count=$((attn_count + 1))
-      detail_block="  ${dag} (stale)"$'\n'
-      detail_block+="    No runs in ${window}. ${last_line}"$'\n'
-      detail_block+="    Check the dagu scheduler is running and the cron expression is valid."$'\n'
+      detail_block="  ${job} (last success $(human "$age") ago; slo ${slo_hours}h — no failed run on disk)"$'\n'
     fi
   fi
 
-  # Pending local drift: the dagu run succeeded, but drift-check left untracked
-  # items unreconciled. Surface them with a DRIFT marker (not ATTN — drift is
-  # low-urgency, never an autofix target) so the digest agrees with the [DRIFT]
-  # email instead of flatly claiming "OK". Only when the run didn't itself fail.
-  if [[ "$dag" == "drift-check" && "$latest_status" != "Failed" && -s "$DRIFT_PENDING_FILE" ]]; then
+  # Pending local drift is orthogonal to freshness: drift-check can be perfectly fresh and
+  # still have untracked items waiting on a human. Surface it on drift-check's row, but
+  # never as ATTN — reconciling drift is a decision, not a failure.
+  if [[ "$job" == "drift-check" && "$marker" == "OK   " && -s "$DRIFT_PENDING_FILE" ]]; then
     n_drift=$(grep -c . "$DRIFT_PENDING_FILE")
     marker="DRIFT"
     comment="${n_drift} untracked item(s) pending reconciliation"
     drift_count=$((drift_count + n_drift))
-    detail_block="  ${dag} (${n_drift} untracked item(s) pending)"$'\n'
+    detail_block="  drift-check (${n_drift} untracked item(s) pending)"$'\n'
     while IFS= read -r line; do
       [[ -n "$line" ]] && detail_block+="    - ${line}"$'\n'
     done < "$DRIFT_PENDING_FILE"
@@ -263,22 +181,19 @@ for f in "$DAGS_DIR"/*.yaml; do
   fi
 
   if [[ -n "$comment" ]]; then
-    rows+=$(printf '%s  %-20s  %d/%d in %-3s  — %s\n' "$marker" "$dag" "$ok" "$runs" "$window" "$comment")
+    rows+=$(printf '%s  %-22s  %-5s ago (slo %sh)  — %s\n' "$marker" "$job" "$(human "$age")" "$slo_hours" "$comment")
   else
-    rows+=$(printf '%s  %-20s  %d/%d in %s\n' "$marker" "$dag" "$ok" "$runs" "$window")
+    rows+=$(printf '%s  %-22s  %-5s ago (slo %sh)\n' "$marker" "$job" "$(human "$age")" "$slo_hours")
   fi
   rows+=$'\n'
-
-  if [[ -n "$detail_block" ]]; then
-    details+="$detail_block"$'\n'
-  fi
-done
+  [[ -n "$detail_block" ]] && details+="$detail_block"$'\n'
+done < "$JOBS_CONF"
 
 if (( attn_count > 0 )); then
   subject="[DAGU] Daily digest — ${attn_count} need attention"
 else
   extras=()
-  (( fixed_count > 0 )) && extras+=("${fixed_count} auto-fixed")
+  (( idle_count  > 0 )) && extras+=("${idle_count} idle by design")
   (( drift_count > 0 )) && extras+=("${drift_count} drift pending")
   if (( ${#extras[@]} > 0 )); then
     suffix=$(printf '%s, ' "${extras[@]}"); suffix="${suffix%, }"
@@ -289,16 +204,22 @@ else
 fi
 
 body="Dagu daily digest — ${TODAY}
+Ages are time since last SUCCESS. Last reconcile tick: $(human "$tick_age") ago.
 
 ${rows}"
 
-if [[ -n "$details" ]]; then
-  body+="Details:
+[[ -n "$details" ]] && body+="Details:
 
 ${details}"
-fi
 
-body+="Markers: OK (healthy) / FIXED (autofix handled it, no action needed) / DRIFT (untracked state to reconcile, low urgency) / ATTN (needs you).
+body+="Markers:
+  OK    fresh — succeeded within its SLO
+  DRIFT untracked system state waiting on a decision (not a failure)
+  IDLE  stale, but the Mac was off/offline since it fell due — expected, no action
+  ATTN  stale despite the Mac being awake and online — needs you
+
+Jobs have no cron schedule; they run whenever the Mac is awake and online and they are
+overdue (scripts/dagu-reconcile). Being away is not a failure.
 
 UI: http://localhost:8080"
 

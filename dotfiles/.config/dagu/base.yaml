@@ -34,9 +34,16 @@ max_active_steps: 10
 max_output_size: 1048576  # 1MB (bytes)
 
 # Lookback window for replaying missed scheduled runs after downtime.
-# On scheduler restart, all missed cron intervals within this window are executed (max 1000).
-# Duration string: e.g. "6h", "24h", "2d12h". Empty = no catchup (missed runs discarded).
-catchup_window: "24h"
+# DISABLED (empty = no catchup). This was an attractive nuisance, not a safety net: on a
+# laptop that sleeps through every scheduled slot, it replayed ALL missed runs at
+# scheduler resume — i.e. the precise moment Wi-Fi has not yet associated — so several
+# network jobs fired into a dead DNS resolver at the same second. It also replayed N runs
+# where one would do: every job here is idempotent-coalescing (one run now supersedes all
+# the missed ones), so there is nothing to catch up.
+#
+# Scheduling is no longer dagu's job at all. scripts/dagu-reconcile decides what is overdue
+# and starts it, only when the Mac is awake AND online. See private/GOTCHAS.md.
+catchup_window: ""
 
 # -- Environment (live) --
 # launchd starts the dagu daemon with a minimal PATH that lacks /opt/homebrew/bin
@@ -49,16 +56,19 @@ env:
   - PATH: /opt/homebrew/bin:${HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
 
 # -- Step defaults (live) --
-# Retry every step on transient failure before the DAG is marked failed (which
-# triggers the autofix handler and a daily-digest ATTN nag). The digests render
-# via the Claude API and periodically hit a transient socket close mid-render;
-# one retry rides that out instead of paging a human for a blip that clears on
-# its own. Steps that set their own retry_policy (msgvault-sync, tad-pipeline)
-# override these values.
-defaults:
-  retry_policy:
-    limit: 2
-    interval_sec: 300
+# NO retry_policy. This is deliberate and is the hardest-won lesson here.
+#
+# A retry that waits in-process is meaningless on a machine that can suspend: the
+# `interval_sec: 300` below used to elapse across sleep cycles, so a 10-minute retry
+# budget became 34 hours of wall clock, restic held its repo lock for over a day, and
+# dagu recorded the zombie runs as Failed. NO PROCESS MAY WAIT ACROSS THE AVAILABILITY
+# BOUNDARY.
+#
+# Retry now lives outside the process, in the reconciler: a failed job simply doesn't
+# get its success marker, so it stays overdue and is retried at the next 15-minute tick —
+# by which time the machine is, by construction, awake and online. That rides out exactly
+# the transient blips (a Claude socket close mid-render, a flaky API) the old retry_policy
+# was added for, without any in-process sleeping.
 
 # -- Shell --
 # Shell interpreter for command steps.
@@ -157,6 +167,14 @@ defaults:
 # Escalations email NOTIFY_EMAIL. Outcomes are written to
 # ~/.local/state/dagu-autofix.jsonl so the daily digest can show them.
 handler_on:
+  # Success marker. This is the reconciler's ONLY source of truth for "when did this job
+  # last actually succeed", and it deliberately does not consult dagu's own status store:
+  # dagu 2.7.2 persists `Failed` for a run whose own log says `status=succeeded` after a
+  # retry (observed on tad-backup-edgar), which is what turned the daily digest into a
+  # stream of false ATTN alarms. A marker touched by dagu itself, only on success, can't
+  # lie in that direction. $DAG_NAME is set for every step and handler.
+  success:
+    command: bash -c 'mkdir -p "$HOME/.local/state/dagu-success" && touch "$HOME/.local/state/dagu-success/$DAG_NAME"'
   failure:
     command: bash $HOME/github/system/scripts/dagu-autofix.sh
 

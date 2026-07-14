@@ -315,6 +315,7 @@ run_local_checks() {
   check_link "${HOME}/Library/Application Support/lazygit/config.yml"             "${DOTFILES}/.config/lazygit/config.yml"
   check_link "${HOME}/.config/dagu/dags"                                         "${HOME}/github/system/dagu"
   check_link "${HOME}/.config/dagu/base.yaml"                                    "${DOTFILES}/.config/dagu/base.yaml"
+  check_link "${HOME}/Library/LaunchAgents/com.patric.dagu-reconcile.plist"      "${DOTFILES}/LaunchAgents/com.patric.dagu-reconcile.plist"
 
   # Before/after count like every other section — a message-pattern grep missed
   # check_link_or_content's "content differs" / "does not exist" variants.
@@ -757,10 +758,15 @@ echo "=============================="
 
 if [[ ${#DRIFT[@]} -eq 0 ]]; then
   echo "No drift detected."
-  # Clear the notify fingerprint so a later recurrence of the same item pages
-  # again (a resolved-then-returned item is genuinely new), and clear the
-  # pending-drift list so the daily digest stops showing a DRIFT row.
-  [[ "$NOTIFY" == 1 ]] && rm -f "$DRIFT_STATE_FILE" "$DRIFT_PENDING_FILE"
+  # Clear the notify fingerprint so a later recurrence of the same item pages again
+  # (a resolved-then-returned item is genuinely new). NOTIFY-gated: it's email state.
+  [[ "$NOTIFY" == 1 ]] && rm -f "$DRIFT_STATE_FILE"
+  # Clear the pending list on ANY local run, NOT just --notify. Gating this on --notify
+  # was a bug: --notify only runs on the job's own (weekly-ish) cadence, so reconciling an
+  # item by hand left a stale pending file behind and the digest kept reporting DRIFT for
+  # up to a week after the drift was actually gone. The pending list must track reality,
+  # so any local run that observes a clean system clears it.
+  [[ "$MODE" == "local" || "$MODE" == "all" ]] && rm -f "$DRIFT_PENDING_FILE"
   exit 0
 fi
 
@@ -773,13 +779,16 @@ done
 # Email the list (silent when clean — nothing reaches here) and exit 0 so the
 # dagu failure handler / autofix does NOT fire. Untracked local state is a
 # reconciliation decision for a human, not something to auto-commit at 3am.
-if [[ "$NOTIFY" == 1 ]]; then
-  # Persist the pending list (overwritten each run) so the daily digest can
-  # show a DRIFT row for as long as the items stay unreconciled — independent
-  # of the email dedup below, which only fires once per changed set.
+# Persist the pending list on ANY local run (see the clean-run branch above for why this
+# is not gated on --notify): the digest shows a DRIFT row for as long as items stay
+# unreconciled, and that row must reflect the CURRENT state, not the state as of the last
+# --notify run. Independent of the email dedup below, which fires once per changed set.
+if [[ "$MODE" == "local" || "$MODE" == "all" ]]; then
   mkdir -p "$(dirname "$DRIFT_PENDING_FILE")"
   printf '%s\n' "${DRIFT[@]}" > "$DRIFT_PENDING_FILE"
+fi
 
+if [[ "$NOTIFY" == 1 ]]; then
   # Dedup: email only when the drift SET changes. A steady-state un-reconciled
   # item (e.g. an extension Patric means to keep but hasn't tracked yet) must
   # not re-nag every run — fingerprint the sorted list and skip the send when

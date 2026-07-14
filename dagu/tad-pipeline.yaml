@@ -1,17 +1,12 @@
-# 04:30 UTC (pinned, DST-proof) — done before Patric's ~07:00 Zurich start
-# (06:32 CEST / 05:32 CET) with margin for the 2×300s retries. api.nasdaq.com
-# (earnings client) is flaky in the ~02:00 UTC post-close window; this sits 2.5h
-# clear of it, and the earnings-client retry hardening (tad) is the real net.
-# Tue-Sat = post-trading-day. See private/GOTCHAS.md.
-schedule: "CRON_TZ=UTC 30 4 * * 2-6"
+# Roughly daily — cadence lives in scripts/dagu-jobs.conf; no cron schedule here (see
+# scripts/dagu-reconcile). It no longer pins a weekday: the loaders resume from the last
+# persisted date, so a run on a non-trading day simply finds no new bars, and a run after
+# a multi-day gap backfills it. Cadence, not calendar. See private/GOTCHAS.md.
 
 steps:
   - name: tad-pipeline
-    # Network-readiness preflight: the run fires at a scheduled wake, so DNS/wifi
-    # may not be up yet. Wait up to 10min for api.massive.com to resolve (no-op on
-    # healthy runs — first lookup succeeds) rather than burning the pipeline on a
-    # NameResolutionError. See private/GOTCHAS.md.
-    command: bash -c 'eval "$(/opt/homebrew/bin/brew shellenv)" && for i in $(seq 1 30); do host api.massive.com >/dev/null 2>&1 && break; echo "network not ready - api.massive.com unresolved (attempt $i/30), sleeping 20s"; sleep 20; done && cd "${HOME}/github/tad/backend" && uv run tad pipeline run -v'
-    retry_policy:
-      limit: 2
-      interval_sec: 300
+    # No network preflight and no retry_policy. Both used to live here and both were
+    # actively harmful: the preflight slept up to 10 min in-process (meaningless across a
+    # suspend) and the retry slept 2×300s more. The reconciler now guarantees the machine
+    # is awake and online BEFORE this is started, and retries by leaving the job overdue.
+    command: bash -c 'eval "$(/opt/homebrew/bin/brew shellenv)" && cd "${HOME}/github/tad/backend" && uv run tad pipeline run -v'

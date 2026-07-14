@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Drives scripts/dagu-reconcile every 15 minutes.
+
+  Why launchd and not a dagu cron entry: launchd does not fire during sleep, and it
+  COALESCES missed StartInterval fires into a single run on wake. That is exactly the
+  anacron trigger we want, and it comes free from the OS. A dagu `*/15` schedule would
+  instead write ~96 junk run records a day into dagu's history (a precondition-gated
+  run is recorded as `Aborted`, not skipped silently — verified), which would wreck
+  the digest's run counts.
+
+  launchd will not start a second instance while one is still running, and the script
+  takes its own lock as well, so a long backup can't be trampled by the next tick.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.patric.dagu-reconcile</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/patric/github/system/scripts/dagu-reconcile</string>
+    </array>
+
+    <!-- 15 min. On wake, missed intervals coalesce into one fire. -->
+    <key>StartInterval</key>
+    <integer>900</integer>
+
+    <!-- Also reconcile once at login/boot, so a cold start doesn't wait a full tick. -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- The script resolves its own tools by absolute path, but dagu shells out to
+         restic/uv/gws, which need Homebrew on PATH. launchd's default PATH is minimal. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/Users/patric/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/patric/.local/state/dagu-reconcile/launchd.out</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/patric/.local/state/dagu-reconcile/launchd.err</string>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

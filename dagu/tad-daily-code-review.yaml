@@ -1,4 +1,5 @@
-schedule: "0 3 * * *"
+# Roughly daily — cadence lives in scripts/dagu-jobs.conf; no cron schedule here (see
+# scripts/dagu-reconcile).
 
 # Bound the run defensively — a healthy sweep is minutes; this caps a hung
 # claude session. Genuine failures (timeout/crash) fall through to the

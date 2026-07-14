@@ -1,12 +1,10 @@
-# WEEKLY (Mon 03:00 local) LOCAL drift only — drift is low-urgency reconciliation,
-# so bundle it into one start-of-week nudge instead of a daily ping. --notify makes
-# it informational: emails the list and exits 0, so the failure handler / autofix
-# does NOT fire — untracked Mac state is a reconciliation decision, not a job to
-# auto-fix at 3am. On top of this, --notify now only emails when the drift SET
-# changes (fingerprint dedup), so an un-reconciled item won't re-nag week on week.
-# The remote-parity surface is NOT checked here; it runs as a gate in dev-up and
-# remote/bootstrap.sh, since it only matters when the devbox is provisioned.
-schedule: "0 3 * * 1"
+# LOCAL drift only. Roughly weekly — cadence lives in scripts/dagu-jobs.conf; there is
+# no cron schedule here (see scripts/dagu-reconcile). --notify makes it informational:
+# emails the list and exits 0, so the failure handler / autofix does NOT fire — untracked
+# Mac state is a reconciliation decision, not a job to auto-fix unattended. --notify also
+# only emails when the drift SET changes (fingerprint dedup), so an un-reconciled item
+# won't re-nag. The remote-parity surface is NOT checked here; it runs as a gate in dev-up
+# and remote/bootstrap.sh, since it only matters when the devbox is provisioned.
 
 steps:
   - name: drift-check

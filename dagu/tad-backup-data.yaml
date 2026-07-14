@@ -1,13 +1,14 @@
-# 05:30 UTC (pinned, DST-proof). The pipeline runs at 04:30 UTC and, with its
-# 2x300s retries, is done by ~04:50; this sits an hour clear. Daily incl. Sun/Mon
-# (which have no pipeline run) keeps "keep 7 daily" meaningful — non-pipeline
-# nights dedup to near-free. Runbook: docs/backup-runbook.md in the tad repo.
-schedule: "CRON_TZ=UTC 30 5 * * *"
+# Roughly daily — cadence lives in scripts/dagu-jobs.conf; no cron schedule here (see
+# scripts/dagu-reconcile). The reconciler runs jobs SERIALLY in conf order, with
+# tad-pipeline immediately before this one, so a backup naturally captures the data the
+# pipeline just produced, and the two backups can never contend restic's exclusive repo
+# lock. That replaces the old 1h stagger, which a sleeping laptop voided (a "1 hour clear"
+# gap is meaningless when a run spans 34 hours). Runbook: docs/backup-runbook.md in tad.
 
 steps:
   - name: tad-backup-data
     # brew shellenv puts restic (/opt/homebrew/bin) on PATH; the script sources
-    # secrets, runs the network-readiness preflight, and exits 0 (logged) while
-    # backups are unconfigured. Retry policy + failure handler inherited from
-    # base.yaml — no bespoke alerting; a real failure exits non-zero.
+    # secrets and exits 0 (logged) while backups are unconfigured. Network readiness is
+    # the reconciler's job, not the script's. Failure handler inherited from base.yaml —
+    # no bespoke alerting; a real failure exits non-zero and it stays overdue.
     command: bash -c 'eval "$(/opt/homebrew/bin/brew shellenv)" && "${HOME}/github/tad/scripts/backup.sh" data'

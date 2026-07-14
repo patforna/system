@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+# Wake-time reconciler. Replaces dagu's cron scheduling for every DAG.
+#
+# WHY THIS EXISTS
+# ---------------
+# cron is edge-triggered: fire at time T, and if the edge lands while the Mac is
+# asleep, the run is lost. This Mac is a laptop that sleeps through every night, so
+# the edges landed in sleep systematically. dagu's catchup_window "fixed" that by
+# replaying the lost edges at scheduler resume — i.e. at the exact moment Wi-Fi has
+# not yet associated — so every network job fired into a dead DNS resolver at once.
+# Retries then slept ACROSS suspend cycles, turning a 10-minute retry budget into
+# 34 hours of wall clock. See private/GOTCHAS.md.
+#
+# This script is level-triggered instead: it asks "what is overdue?" whenever the
+# machine is genuinely available (awake AND online), and runs it. State (the
+# last-success timestamp) survives sleep; edges do not. This is anacron semantics.
+#
+# Consequences worth internalising:
+#   - Being off is not a failure. An off machine simply doesn't reconcile, and no
+#     run is "missed" — it's just overdue, and it runs at the next opportunity.
+#     A 3-week holiday needs no special handling: off IS the pause.
+#   - Nothing waits in-process for the network. If we're offline we exit quietly and
+#     the next tick (15 min) retries. A process must never sleep across the
+#     availability boundary.
+#   - Jobs run SERIALLY, so restic's exclusive repo lock can't be contended and the
+#     old backup stagger is unnecessary.
+#
+# Driven by launchd (StartInterval 900), which does not fire during sleep and
+# coalesces missed fires into a single run on wake — a native anacron trigger, and
+# the reason we don't fight pmset/DarkWake.
+
+REPO="${HOME}/github/system"
+JOBS_CONF="${REPO}/scripts/dagu-jobs.conf"
+DAGU="${DAGU:-/opt/homebrew/bin/dagu}"
+
+STATE_DIR="${HOME}/.local/state/dagu-reconcile"
+MARKER_DIR="${HOME}/.local/state/dagu-success"
+LOCK_DIR="${STATE_DIR}/lock"
+TICK_FILE="${STATE_DIR}/last-tick"
+LOG_FILE="${STATE_DIR}/reconcile.log"
+
+# Host used purely as a DNS liveness probe. Any always-up host would do; this one is
+# already a hard dependency (restic's B2 backend).
+NET_PROBE_HOST="${NET_PROBE_HOST:-api.backblazeb2.com}"
+# Bounded by WALL CLOCK, not iteration count: an iteration-counted loop is meaningless
+# on a machine that can suspend mid-sleep(1).
+NET_WAIT_SECS="${NET_WAIT_SECS:-60}"
+
+# A lock older than this is assumed stale (a crash, or a kill during a long backup)
+# rather than a live run, and is broken. Must exceed the longest plausible job.
+LOCK_STALE_SECS=$((12 * 3600))
+
+mkdir -p "$STATE_DIR" "$MARKER_DIR"
+
+log() { printf '%s  %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG_FILE"; }
+
+# Seconds since a file's mtime; prints a huge number when the file is absent, so a
+# job that has never succeeded always reads as overdue.
+age_secs() {
+  local f="$1" mtime now
+  [[ -f "$f" ]] || { echo 999999999; return; }
+  mtime=$(stat -f %m "$f" 2>/dev/null) || { echo 999999999; return; }
+  now=$(date +%s)
+  echo $((now - mtime))
+}
+
+# --- Single instance ---------------------------------------------------------
+# mkdir is atomic. A stale lock (crash, or SIGKILL during a long backup) would
+# otherwise wedge the reconciler permanently, so break locks older than the cap.
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+  if (( $(age_secs "$LOCK_DIR/.stamp") > LOCK_STALE_SECS )); then
+    log "breaking stale lock (older than ${LOCK_STALE_SECS}s)"
+    rm -rf "$LOCK_DIR" && mkdir "$LOCK_DIR" 2>/dev/null || exit 0
+  else
+    exit 0  # a reconcile is genuinely in flight — not an error
+  fi
+fi
+touch "$LOCK_DIR/.stamp"
+trap 'rm -rf "$LOCK_DIR" 2>/dev/null' EXIT
+
+# --- Availability gate -------------------------------------------------------
+# "Available" means awake AND online. Being awake is implied (we're running), so all
+# that's left is DNS. If we're not online, exit 0 WITHOUT recording a tick: no tick
+# means "no opportunity", which is what lets the digest tell "the Mac was off/offline"
+# apart from "the job is broken". Never alarm on absence-without-opportunity.
+deadline=$(( $(date +%s) + NET_WAIT_SECS ))
+until host -W 2 "$NET_PROBE_HOST" >/dev/null 2>&1; do
+  if (( $(date +%s) >= deadline )); then
+    exit 0  # offline: stay quiet, the next tick retries
+  fi
+  sleep 5
+done
+
+# Online. Record the opportunity BEFORE running anything, so a long job doesn't delay
+# the evidence that the machine was available.
+touch "$TICK_FILE"
+
+# --- Reconcile ---------------------------------------------------------------
+# Serial by design: `dagu start` blocks until the DAG finishes, so this loop gives us
+# concurrency-1 across every job for free (no dagu queue config needed), which is what
+# makes restic lock contention structurally impossible.
+ran=0
+while read -r job slo_hours; do
+  [[ -z "$job" || "$job" == \#* ]] && continue
+
+  marker="${MARKER_DIR}/${job}"
+  age=$(age_secs "$marker")
+  slo_secs=$((slo_hours * 3600))
+
+  (( age < slo_secs )) && continue  # fresh enough — nothing to do
+
+  log "running ${job} (last success ${age}s ago, slo ${slo_secs}s)"
+  if "$DAGU" start "$job" >/dev/null 2>&1; then
+    log "  ${job}: ok"
+  else
+    # Not fatal to the pass: a failed job must not block the ones behind it. It stays
+    # overdue (no success marker), so the next tick retries it — retry lives here, in
+    # the scheduler, never inside the job process.
+    log "  ${job}: FAILED (stays overdue; will retry next tick)"
+  fi
+  ran=$((ran + 1))
+done < "$JOBS_CONF"
+
+(( ran > 0 )) && log "reconcile pass complete (${ran} job(s) run)"
+exit 0

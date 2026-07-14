@@ -1,4 +1,6 @@
-schedule: "0 4 * * *"
+# Roughly daily — cadence lives in scripts/dagu-jobs.conf; no cron schedule here (see
+# scripts/dagu-reconcile). It runs LAST in the reconciler's serial pass, so the digest it
+# emails reflects everything that ran in this same pass, not the previous one's outcomes.
 
 steps:
   - name: workflow-digest
