@@ -36,6 +36,7 @@ NOTIFY_EMAIL="${NOTIFY_EMAIL:-}"
 
 SYSTEM_REPO="${HOME}/github/system"
 JOBS_CONF="${SYSTEM_REPO}/scripts/dagu-jobs.conf"
+SELF="workflow-digest"   # this digest's own DAG — it can't report on its own freshness (see loop)
 TODAY=$(date '+%Y-%m-%d')
 
 AUTOFIX_LOG="${AUTOFIX_LOG:-${HOME}/.local/state/dagu-autofix.jsonl}"
@@ -126,6 +127,14 @@ while read -r job slo_hours; do
   marker_file="${MARKER_DIR}/${job}"
   age=$(age_of "$marker_file")
   slo_secs=$((slo_hours * 3600))
+
+  # The digest cannot report on its own freshness: it reads the success markers BEFORE its
+  # own handler_on.success stamps this run, so it would always see itself one run stale and
+  # flag ATTN on itself every single time. The email you're holding is proof this run
+  # succeeded, so treat SELF as fresh (age 0 → OK). Trade-off: a digest run that fails to
+  # send produces no email at all (the absence is the signal) and is retried at the next
+  # reconciler tick — the marker is untouched here, so that retry path is preserved.
+  [[ "$job" == "$SELF" ]] && age=0
 
   marker_m=$(mtime "$marker_file")
   due=$(( marker_m + slo_secs ))   # 0 + slo when the job has never succeeded => long overdue
