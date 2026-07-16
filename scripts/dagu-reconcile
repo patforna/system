@@ -111,6 +111,20 @@ while read -r job slo_hours; do
 
   (( age < slo_secs )) && continue  # fresh enough — nothing to do
 
+  # Re-probe network before each job. The pass-start gate goes stale: jobs run
+  # serially and a long one (tad-pipeline can span 1h+) drifts the laptop into a
+  # maintenance-sleep cycle that kills DNS for the jobs QUEUED BEHIND it, which then
+  # fire into a dead resolver — a false failure that wakes the on_failure autofix
+  # handler (an LLM session) for a blip the scheduler already handles. Exactly the
+  # "network job fired into a dead network" the reconciler exists to prevent; the
+  # once-per-pass check just didn't cover jobs that start much later in the pass.
+  # One cheap probe, NO wait (a wait loop across suspend is the anti-pattern this
+  # design bans). Offline now ⇒ stop the pass; remaining overdue jobs retry next tick.
+  if ! host -W 2 "$NET_PROBE_HOST" >/dev/null 2>&1; then
+    log "network dropped mid-pass before ${job} — stopping (stays overdue; retries next tick)"
+    break
+  fi
+
   log "running ${job} (last success ${age}s ago, slo ${slo_secs}s)"
   if "$DAGU" start "$job" >/dev/null 2>&1; then
     log "  ${job}: ok"
