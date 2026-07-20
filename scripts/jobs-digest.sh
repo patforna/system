@@ -44,11 +44,13 @@ for f in extraction-prompt.md extraction-schema.json \
   [[ -s "$JOBS_DIR/$f" ]] || { echo "$f missing or empty" >&2; exit 1; }
 done
 
-# Body-character budget per extraction chunk. A quiet jobs week is ~18 msgs of a
-# few KB each, so this is normally a single chunk; the budget only splits a
-# pathological flood. Stays well under ARG_MAX (~1MB) — the chunk JSON travels
-# inline in the prompt argument, since the tool-less extraction cannot read files.
-CHUNK_BUDGET="${JOBS_CHUNK_BUDGET:-80000}"
+# Body-character budget per extraction chunk. Sized against extraction OUTPUT,
+# not input: ARG_MAX (~1MB) has huge headroom, but a listings-dense chunk emits
+# roughly its own weight in structured roles, and generating that JSON is what
+# burns the per-attempt clock. 07-20 measured it — an 84k-char chunk timed out at
+# 300s three times while an 11k-char one returned 44 roles (33k envelope) well
+# inside the cap. 20k keeps each call near twice that proven-good size.
+CHUNK_BUDGET="${JOBS_CHUNK_BUDGET:-20000}"
 
 # 1. Fetch 7 days of jobs-labelled mail (unchanged: gws fetcher, count==0 guard).
 "$PYTHON3" "$SCRIPT_DIR/lib/fetch-gmail-label.py" \
@@ -82,12 +84,13 @@ mkdir -p "$WORK_DIR/chunks" "$WORK_DIR/items"
 # chunk it still fails on is failed outright; this loop's attempts are consumed
 # only by semantically INVALID responses (structured_output null, alien message
 # ids, empty from a multi-message chunk), twice, then the chunk is marked failed
-# and the run carries on. Per-attempt cap drops to 300s here — haiku on a small
-# jobs chunk finishes in minutes.
+# and the run carries on. Per-attempt cap drops to 600s here — generous against a
+# CHUNK_BUDGET-sized chunk (the 11k-char chunk that returned 44 roles on 07-20
+# finished well inside half this), while still bounding a hung call.
 extraction_prompt=$(cat "$JOBS_DIR/extraction-prompt.md")
 extraction_schema=$(cat "$JOBS_DIR/extraction-schema.json")
 saved_timeout=$CLAUDE_TIMEOUT
-CLAUDE_TIMEOUT=300
+CLAUDE_TIMEOUT=600
 failed_msgs=0
 echo "=== Extracting ==="
 for chunk in "$WORK_DIR"/chunks/chunk-*.json; do
@@ -113,6 +116,15 @@ for chunk in "$WORK_DIR"/chunks/chunk-*.json; do
     n=$(jq length "$chunk")
     echo "$name: failed after 3 attempts — its $n messages count as unextracted" >&2
     failed_msgs=$((failed_msgs + n))
+    # Smaller chunks mean more of them, so a total API outage could otherwise
+    # burn 3 capped attempts per chunk and overrun the DAG's 5400s timer (which
+    # SIGKILLs mid-script — see GOTCHAS). Once enough messages are lost that the
+    # coverage gate below can no longer pass, no remaining chunk can save the
+    # run: stop and fail fast rather than keep paying for a doomed digest.
+    if (( failed_msgs * 10 > count )); then
+      echo "coverage already unrecoverable — abandoning remaining chunks" >&2
+      break
+    fi
   fi
 done
 CLAUDE_TIMEOUT=$saved_timeout
