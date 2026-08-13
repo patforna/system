@@ -149,7 +149,7 @@ echo ""
 
 # --- Login Items ---
 echo "--- Login Items ---"
-login_items=("ActivityWatch" "Rectangle")
+login_items=("ActivityWatch" "Maccy" "Rectangle")
 for app in "${login_items[@]}"; do
   if [[ -d "/Applications/${app}.app" ]]; then
     if osascript -e "tell application \"System Events\" to get the name of every login item" 2>/dev/null | grep -q "$app"; then
