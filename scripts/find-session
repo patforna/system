@@ -11,23 +11,32 @@
 #                If the authoring signature isn't found (e.g. a subagent/
 #                headless commit whose stdout wasn't captured), falls back to
 #                every session mentioning the hash, split by whether it
-#                started before or after the commit.
+#                started before or after the commit. Hash mode searches every
+#                session, subagent and headless included - those are exactly
+#                the ones that commit without leaving a signature.
 #
-#   text mode  - anything else. Lists every session whose transcript matches
-#                the query (literal, smart-case), newest first, with a snippet
-#                of the first hit. By default the whole transcript is searched
-#                (your prompts, my replies, tool calls/output); --prompts-only
-#                restricts to your user messages.
+#   text mode  - anything else. Lists sessions whose *user prompts* match the
+#                query (literal, smart-case), newest first, with the matching
+#                prompt as the snippet and a copy-pasteable resume command.
+#                `--all-text` widens the search to the whole transcript
+#                (my replies, tool calls/output).
+#
+# Text mode only lists sessions you could actually resume and talk to:
+# subagent transcripts (`subagents/`, `isSidechain`) and headless runs
+# (`claude -p`, dagu cron - no `{"type":"mode"}` record) are excluded unless
+# asked for. Within a session, only things you typed count as prompts -
+# injected records (`isMeta`), slash-command wrappers, `<system-reminder>`
+# blocks, task/teammate messages and interrupt markers are stripped out.
 #
 # A hex query that doesn't resolve to a commit falls through to text mode, so
 # searching for a short hex string still works.
 #
 # Usage:
 #   find-session <hash>                      # hash mode (auto)
-#   find-session <hash> --repo               # narrow to current repo's project
-#   find-session <text>                      # text mode (auto), full transcript
-#   find-session <text> --prompts-only       # text mode, user prompts only
-#   find-session <text> --repo -p            # flags combine, any order
+#   find-session <text>                      # text mode (auto), your prompts
+#   find-session <text> --all-text           # text mode, whole transcript
+#   find-session <text> --repo               # narrow to the current repo
+#   find-session <text> -n 0                 # no result cap
 #
 # Exit codes:
 #   0  hash: authoring session found  |  text: at least one match
@@ -37,6 +46,9 @@
 set -euo pipefail
 
 PROJECTS_DIR="$HOME/.claude/projects"
+DRIVE_TARGET=$(readlink "$HOME/Drive" 2>/dev/null || true)
+DEFAULT_LIMIT=10
+TYPED_MAX=2000  # a matching prompt longer than this reads as pasted, not typed
 
 usage() {
     cat <<'EOF'
@@ -44,10 +56,19 @@ find-session - locate a Claude Code session by commit hash or by text.
 
 Usage:
   find-session <hash>                  hash mode (auto): authoring session
-  find-session <hash> --repo           narrow to the current repo's project
-  find-session <text>                  text mode (auto): full transcript
-  find-session <text> --prompts-only   text mode: your user messages only
-  find-session <text> --repo -p        flags combine, any order
+  find-session <text>                  text mode (auto): your prompts
+
+Options:
+  -a, --all-text        search the whole transcript, not just your prompts
+  -p, --prompts-only    your prompts only (the default; kept for habit)
+      --repo            narrow to sessions whose cwd is in the current repo
+  -n, --limit N         max results, 0 for all (default 10)
+      --include-agents      also list subagent transcripts
+      --include-headless    also list headless / cron (claude -p) sessions
+      --word            require whole-word matches
+      --substring       allow substring matches (default for queries >3 chars)
+      --safe            resume command without --dangerously-skip-permissions
+  -h, --help
 
 Mode is auto-detected: a hex query (7-40 chars) that resolves to a commit
 uses hash mode; anything else (incl. non-resolving hex) uses text mode.
@@ -62,14 +83,26 @@ EOF
 # ---- arg parsing ---------------------------------------------------------
 # First positional is the query; flags may appear in any order around it.
 QUERY=""
-SCOPE="--all"
-PROMPTS_ONLY=0
+SCOPE="all"
+PROMPTS_ONLY=1
+LIMIT=$DEFAULT_LIMIT
+INCLUDE_AGENTS=0
+INCLUDE_HEADLESS=0
+WORD_MODE="auto"
+YOLO=1
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --repo)               SCOPE="--repo" ;;
-        --all)                SCOPE="--all" ;;
+        --repo)               SCOPE="repo" ;;
+        --all)                SCOPE="all" ;;
         --prompts-only|-p)    PROMPTS_ONLY=1 ;;
+        --all-text|-a)        PROMPTS_ONLY=0 ;;
+        --limit|-n)           shift; LIMIT="${1:-}" ;;
+        --include-agents)     INCLUDE_AGENTS=1 ;;
+        --include-headless)   INCLUDE_HEADLESS=1 ;;
+        --word)               WORD_MODE="on" ;;
+        --substring)          WORD_MODE="off" ;;
+        --safe)               YOLO=0 ;;
         -h|--help)            usage; exit 0 ;;
         --)                   shift; [[ -n "${1:-}" && -z "$QUERY" ]] && QUERY="$1" ;;
         -*)                   echo "unknown flag: $1" >&2; exit 1 ;;
@@ -84,25 +117,33 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$QUERY" ]]; then
-    echo "usage: find-session <hash|text> [--repo] [--prompts-only]" >&2
+    echo "usage: find-session <hash|text> [--all-text] [--repo] [--limit N]" >&2
     exit 1
+fi
+if ! [[ "$LIMIT" =~ ^[0-9]+$ ]]; then
+    echo "--limit takes a non-negative integer" >&2; exit 1
 fi
 
 # ---- scope ---------------------------------------------------------------
+# Claude Code names each project dir after the *cwd*, not the repo root, and
+# replaces every non-alphanumeric char (incl. '.' and '_') with '-'. So a
+# session started in a subdirectory lands in its own dir - take every dir the
+# repo's slug prefixes, then confirm against each session's recorded cwd.
+SEARCH_ROOTS=()
+REPO_ROOT=""
 case "$SCOPE" in
-    --all)
-        SEARCH_ROOT="$PROJECTS_DIR" ;;
-    --repo)
+    all)
+        SEARCH_ROOTS=("$PROJECTS_DIR") ;;
+    repo)
         REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || {
             echo "--repo requires being inside a git repo" >&2
             exit 1
         }
-        # Claude Code replaces every non-alphanumeric char (incl. '.' and '_')
-        # with '-', not just slashes — e.g. ~/github/.worktrees/... encodes as
-        # -Users-...-github--worktrees-...
         SLUG=$(printf '%s' "$REPO_ROOT" | sed 's/[^A-Za-z0-9-]/-/g')
-        SEARCH_ROOT="$PROJECTS_DIR/$SLUG"
-        [[ -d "$SEARCH_ROOT" ]] || { echo "no Claude sessions for this repo" >&2; exit 1; } ;;
+        for d in "$PROJECTS_DIR/$SLUG"*; do
+            [[ -d "$d" ]] && SEARCH_ROOTS+=("$d")
+        done
+        [[ ${#SEARCH_ROOTS[@]} -gt 0 ]] || { echo "no Claude sessions for this repo" >&2; exit 1; } ;;
 esac
 
 # ---- mode detection ------------------------------------------------------
@@ -114,6 +155,25 @@ if [[ "$QUERY" =~ ^[0-9a-f]{7,40}$ ]] \
     MODE="hash"
 fi
 
+# Short queries match inside URLs, ids and base64 blobs; require whole words.
+if [[ "$WORD_MODE" == "auto" ]]; then
+    if [[ ${#QUERY} -le 3 && "$QUERY" =~ ^[A-Za-z0-9]+$ ]]; then
+        WORD_MODE="on"
+    else
+        WORD_MODE="off"
+    fi
+fi
+QUERY_RE=$(printf '%s' "$QUERY" | sed 's/[][^$.*+?(){}|\\\/]/\\&/g')
+
+# Matching within extracted text (the file prefilter below stays fixed-string).
+match_text() {  # stdin -> matching lines
+    if [[ "$WORD_MODE" == "on" ]]; then
+        rg -S --no-messages -- "\\b${QUERY_RE}\\b"
+    else
+        rg -FS --no-messages -- "$QUERY"
+    fi
+}
+
 # ---- shared helpers ------------------------------------------------------
 
 # Extract session start timestamp from the first user message
@@ -124,15 +184,85 @@ session_start_ts() {
         | jq -r '.timestamp // empty' 2>/dev/null || true
 }
 
-print_session() {
-    local file=$1 label=$2 snippet="${3:-}"
-    local session
+# Timestamp, cwd and branch in one read - all three sit on the first user
+# record. cwd beats decoding the project-dir slug, which is lossy ('/', '.'
+# and '_' all become '-'). Returns "ts<TAB>cwd<TAB>branch".
+session_meta() {
+    rg -m1 --no-messages '"parentUuid":null[^}]*"type":"user"' "$1" 2>/dev/null \
+        | jq -r '[.timestamp // "", .cwd // "", .gitBranch // ""] | @tsv' 2>/dev/null || true
+}
+
+# Sessions with no {"type":"mode"} record were never interactive - `claude -p`
+# helpers and dagu cron runs. Resuming them is pointless, and their "prompts"
+# are machine-written.
+# Single command, no pipe: `head -3 "$1" | rg -q` looks cheaper but is both
+# slower (fork + huge first lines read into the shell) and wrong - rg exits on
+# the first hit, SIGPIPEs head, and `set -o pipefail` reports the pipeline as
+# failed, silently reclassifying interactive sessions as headless.
+is_interactive() {
+    rg -q -m1 --no-messages '"type":"mode"' "$1" 2>/dev/null
+}
+
+is_subagent() {
+    case "$1" in
+        */subagents/*) return 0 ;;
+    esac
+    case "$(basename "$1")" in
+        agent-*) return 0 ;;
+    esac
+    return 1
+}
+
+# ~/Library/CloudStorage/GoogleDrive-.../My Drive -> ~/Drive; $HOME -> ~
+abbrev_path() {
+    local p=$1
+    if [[ -n "$DRIVE_TARGET" && "$p" == "$DRIVE_TARGET"* ]]; then
+        printf '~/Drive%s' "${p#$DRIVE_TARGET}"
+    elif [[ "$p" == "$HOME" ]]; then
+        printf '~'
+    elif [[ "$p" == "$HOME"/* ]]; then
+        printf '~%s' "${p#$HOME}"
+    else
+        printf '%s' "$p"
+    fi
+}
+
+# Same abbreviation, but safe to paste into a shell: the leading ~/ stays bare
+# so it still expands, everything after it gets quoted (Drive paths have spaces).
+cd_arg() {
+    local p
+    p=$(abbrev_path "$1")
+    case "$p" in
+        '~')   printf '~' ;;
+        '~/'*) printf '~/'; printf '%q' "${p#'~/'}" ;;
+        *)     printf '%q' "$p" ;;
+    esac
+}
+
+resume_cmd() {
+    local file=$1 cwd=$2
+    local session flags=" --dangerously-skip-permissions"
     session=$(basename "$file" .jsonl)
-    local first_line
+    [[ $YOLO -eq 1 ]] || flags=""
+    if [[ -n "$cwd" ]]; then
+        printf 'cd %s && claude%s --resume %s' "$(cd_arg "$cwd")" "$flags" "$session"
+    else
+        printf 'claude%s --resume %s' "$flags" "$session"
+    fi
+}
+
+# ==========================================================================
+# HASH MODE  (claude-replay parses the "[authoring] <uuid>" line - keep it)
+# ==========================================================================
+print_hash_session() {
+    local file=$1 label=$2
+    local session cwd ts prompt first_line
+    session=$(basename "$file" .jsonl)
     first_line=$(rg -m1 --no-messages '"parentUuid":null[^}]*"type":"user"' "$file" 2>/dev/null || true)
-    local ts="" prompt=""
+    ts=""; prompt=""; cwd=""
     if [[ -n "$first_line" ]]; then
         ts=$(echo "$first_line" | jq -r '.timestamp // empty' 2>/dev/null || true)
+        cwd=$(echo "$first_line" | jq -r '.cwd // empty' 2>/dev/null || true)
         prompt=$(echo "$first_line" | jq -r '
             .message.content
             | if type == "array" then (.[0].text // .[0].content // "") else . end
@@ -141,15 +271,12 @@ print_session() {
     fi
     echo "[$label] $session"
     [[ -n "$ts" ]]      && echo "  started: $ts"
+    [[ -n "$cwd" ]]     && echo "  dir:     $(abbrev_path "$cwd")"
     [[ -n "$prompt" ]]  && printf '  prompt:  %s\n' "${prompt//$'\n'/$'\n           '}"
-    [[ -n "$snippet" ]] && printf '  match:   %s\n' "$snippet"
-    echo "  resume:  claude --resume $session"
+    echo "  resume:  $(resume_cmd "$file" "$cwd")"
     echo
 }
 
-# ==========================================================================
-# HASH MODE  (behaviour unchanged - claude-replay parses "[authoring] <uuid>")
-# ==========================================================================
 if [[ "$MODE" == "hash" ]]; then
     HASH="$QUERY"
     # UTC Z-format to match the session JSONL timestamps — %aI carries the
@@ -158,7 +285,7 @@ if [[ "$MODE" == "hash" ]]; then
     COMMIT_TIME=$(TZ=UTC git show -s --date=format-local:'%Y-%m-%dT%H:%M:%SZ' --format=%ad "$HASH" 2>/dev/null || true)
 
     SIG_PATTERN="\[[A-Za-z0-9/_.-]+ ${HASH}[0-9a-f]*\]"
-    SIG_MATCHES=$(rg -l --no-messages -- "$SIG_PATTERN" "$SEARCH_ROOT" 2>/dev/null || true)
+    SIG_MATCHES=$(rg -l --no-messages -- "$SIG_PATTERN" "${SEARCH_ROOTS[@]}" 2>/dev/null || true)
 
     AUTHORED=()
     POST_AUTHORED=()
@@ -173,13 +300,13 @@ if [[ "$MODE" == "hash" ]]; then
     done <<< "$SIG_MATCHES"
 
     if [[ ${#AUTHORED[@]} -gt 0 ]]; then
-        for f in "${AUTHORED[@]}"; do print_session "$f" "authoring"; done
+        for f in "${AUTHORED[@]}"; do print_hash_session "$f" "authoring"; done
         [[ ${#POST_AUTHORED[@]} -gt 0 ]] \
             && echo "(skipped ${#POST_AUTHORED[@]} post-commit session(s) that echoed the signature)"
         exit 0
     fi
 
-    REF_MATCHES=$(rg -l --no-messages -- "$HASH" "$SEARCH_ROOT" 2>/dev/null || true)
+    REF_MATCHES=$(rg -l --no-messages -- "$HASH" "${SEARCH_ROOTS[@]}" 2>/dev/null || true)
     if [[ -z "$REF_MATCHES" ]]; then
         echo "no sessions mention $HASH." >&2
         echo "  (if the repo's history was rewritten/rebased since this commit," >&2
@@ -204,8 +331,8 @@ if [[ "$MODE" == "hash" ]]; then
     done <<< "$REF_MATCHES"
 
     # bash 3.2 (macOS) errors on "${arr[@]}" when empty under `set -u`.
-    [[ ${#PRE_COMMIT[@]}  -gt 0 ]] && for f in "${PRE_COMMIT[@]}";  do print_session "$f" "pre-commit"; done
-    [[ ${#POST_COMMIT[@]} -gt 0 ]] && for f in "${POST_COMMIT[@]}"; do print_session "$f" "post-commit"; done
+    [[ ${#PRE_COMMIT[@]}  -gt 0 ]] && for f in "${PRE_COMMIT[@]}";  do print_hash_session "$f" "pre-commit"; done
+    [[ ${#POST_COMMIT[@]} -gt 0 ]] && for f in "${POST_COMMIT[@]}"; do print_hash_session "$f" "post-commit"; done
     exit 2
 fi
 
@@ -213,66 +340,157 @@ fi
 # TEXT MODE
 # ==========================================================================
 
-# Aggregate a file's *user prompt* text (plain string content or text blocks;
-# tool_result records, also type==user, yield nothing).
+# One line per thing you actually typed, whitespace collapsed. Everything the
+# harness files under type=="user" but you never wrote is dropped here.
 prompts_text() {
     local file=$1
     rg --no-messages -- '"type":"user"' "$file" 2>/dev/null \
-        | jq -r '
-            select(.type == "user")
+        | jq -r --argjson agents "$INCLUDE_AGENTS" '
+            select(.type == "user" and (.isMeta // false) == false
+                   and ($agents == 1 or (.isSidechain // false) == false))
             | .message.content
-            | if type == "string" then .
-              elif type == "array" then ([ .[] | select(.type? == "text") | .text ] | join("\n"))
-              else "" end
-        ' 2>/dev/null || true
+            | (if type == "string" then .
+               elif type == "array" then ([ .[] | select(.type? == "text") | .text // "" ] | join("\n"))
+               else "" end)
+            | gsub("<system-reminder>.*?</system-reminder>"; ""; "m")
+            | sub("^\\s+"; "")
+            | select(length > 0)
+            | select(
+                (   startswith("<command-name>") or startswith("<command-message>")
+                 or startswith("<command-args>") or startswith("<local-command-stdout>")
+                 or startswith("<local-command-caveat>") or startswith("<system-reminder>")
+                 or startswith("<task-notification>")
+                 or ($agents == 0 and (startswith("<teammate-message>") or startswith("<agent-message")))
+                 or startswith("[structured-output-enforce]")
+                 or startswith("Another Claude session sent a message:")
+                 or startswith("[Request interrupted")
+                 or startswith("Caveat: The messages below")
+                ) | not)
+            # One line per prompt, via split/join rather than gsub. jq gsub is
+            # O(n^2) and takes seconds on a 200KB cron prompt; runs of spaces get
+            # squeezed downstream by tr, which is linear.
+            | split("\n") | join(" ") | split("\t") | join(" ") | split("\r") | join(" ")
+        ' 2>/dev/null \
+        | tr -s ' ' | sed 's/^ *//; s/ *$//; /^$/d' || true
 }
 
-# Snippet of the first hit, prefixed with the record type, whitespace-collapsed.
-match_snippet() {
-    local file=$1 line snip
-    line=$(rg -m1 -FS --no-messages -- "$QUERY" "$file" 2>/dev/null || true)
-    [[ -z "$line" ]] && return
-    snip=$(echo "$line" | jq -r '
+# Whole-transcript text, one line per record, for --all-text.
+transcript_text() {
+    local file=$1
+    jq -r '
         ((.type // "?")) as $t
         | (.message.content
            | if type == "string" then .
              elif type == "array" then ([ .[] | (.text // .content // (.type? // "")) | tostring ] | join(" "))
              else tostring end) as $c
         | "[\($t)] \($c)"
-    ' 2>/dev/null || true)
-    [[ -z "$snip" ]] && snip="$line"
-    echo "$snip" | tr '\n\t' '  ' | tr -s ' ' | cut -c1-160
+        | split("\n") | join(" ") | split("\t") | join(" ") | split("\r") | join(" ")
+    ' "$file" 2>/dev/null | tr -s ' ' || true
+}
+
+# ±70 chars around the first hit, so you can see why it matched.
+snippet_around() {
+    awk -v q="$QUERY" -v pad=70 '
+        {
+            p = index(tolower($0), tolower(q))
+            if (p == 0) { print substr($0, 1, 2 * pad); next }
+            s = p - pad; if (s < 1) s = 1
+            out = substr($0, s, 2 * pad + length(q))
+            if (s > 1) out = "…" out
+            if (s + 2 * pad + length(q) <= length($0)) out = out "…"
+            print out
+        }'
 }
 
 # Candidate files: any transcript literally containing the query (smart-case).
-# Prompt-only matches are a subset, so this prefilter is safe and fast.
-CAND=$(rg -lFS --no-messages -- "$QUERY" "$SEARCH_ROOT" 2>/dev/null || true)
+# Word-boundary and prompt-only matches are both subsets, so the prefilter is
+# safe and keeps the expensive jq pass off most of the corpus.
+CAND=$(rg -lFS --no-messages -- "$QUERY" "${SEARCH_ROOTS[@]}" 2>/dev/null || true)
 
 ROWS=()
+SKIP_AGENT=0
+SKIP_HEADLESS=0
+SKIP_REPO=0
 while IFS= read -r file; do
     [[ -z "$file" ]] && continue
-    if [[ $PROMPTS_ONLY -eq 1 ]]; then
-        prompts_text "$file" | rg -qFS -- "$QUERY" || continue
+
+    if is_subagent "$file"; then
+        # A subagent transcript is never interactive, so the headless test would
+        # swallow it too - --include-agents has to stand on its own.
+        if [[ $INCLUDE_AGENTS -eq 0 ]]; then
+            SKIP_AGENT=$((SKIP_AGENT + 1)); continue
+        fi
+    elif [[ $INCLUDE_HEADLESS -eq 0 ]] && ! is_interactive "$file"; then
+        SKIP_HEADLESS=$((SKIP_HEADLESS + 1)); continue
     fi
-    ts=$(session_start_ts "$file")
-    ROWS+=("${ts:-0000-00-00}"$'\t'"$file")
+
+    IFS=$'\t' read -r ts cwd branch <<< "$(session_meta "$file")"
+    if [[ "$SCOPE" == "repo" ]]; then
+        if [[ "$cwd" != "$REPO_ROOT" && "$cwd" != "$REPO_ROOT"/* ]]; then
+            SKIP_REPO=$((SKIP_REPO + 1)); continue
+        fi
+    fi
+
+    # Rank on the *shortest* matching prompt: the query buried in a 4,000-word
+    # paste is a weaker hit than the same word in something you typed.
+    hits=$(prompts_text "$file" | match_text || true)
+    if [[ -n "$hits" ]]; then
+        best=$(printf '%s\n' "$hits" | awk '{ print length "\t" $0 }' | sort -n | head -1 | cut -f2- || true)
+        tier=0
+        [[ ${#best} -gt $TYPED_MAX ]] && tier=1
+    else
+        [[ $PROMPTS_ONLY -eq 1 ]] && continue
+        best=$(transcript_text "$file" | match_text | head -1 || true)
+        [[ -z "$best" ]] && continue
+        tier=2
+    fi
+
+    snippet=$(printf '%s\n' "$best" | snippet_around)
+    ROWS+=("$tier"$'\t'"${ts:-0000-00-00T00:00:00Z}"$'\t'"$file"$'\t'"$cwd"$'\t'"$branch"$'\t'"$snippet")
 done <<< "$CAND"
 
-what="full transcript"
-[[ $PROMPTS_ONLY -eq 1 ]] && what="user prompts"
+what="your prompts"
+[[ $PROMPTS_ONLY -eq 1 ]] || what="full transcript"
+
+excluded=""
+[[ $SKIP_AGENT    -gt 0 ]] && excluded="$excluded, $SKIP_AGENT subagent (--include-agents)"
+[[ $SKIP_HEADLESS -gt 0 ]] && excluded="$excluded, $SKIP_HEADLESS headless (--include-headless)"
+[[ $SKIP_REPO     -gt 0 ]] && excluded="$excluded, $SKIP_REPO outside this repo"
+excluded="${excluded#, }"
 
 if [[ ${#ROWS[@]} -eq 0 ]]; then
     echo "no sessions match \"$QUERY\" ($what)." >&2
+    [[ -n "$excluded" ]] && echo "excluded: $excluded" >&2
     exit 2
 fi
 
-echo "${#ROWS[@]} session(s) matching \"$QUERY\" ($what), newest first:"
+total=${#ROWS[@]}
+shown=$total
+[[ $LIMIT -gt 0 && $LIMIT -lt $total ]] && shown=$LIMIT
+
+echo "$total session(s) matching \"$QUERY\" ($what), newest first:"
+[[ -n "$excluded" ]] && echo "excluded: $excluded"
 echo
 
-# Newest first: timestamps are ISO-8601, lexically sortable; unknowns sort last.
-while IFS=$'\t' read -r _ts file; do
+# Typed hits first, then long pasted ones, then non-prompt text; newest first
+# within each tier.
+i=0
+while IFS=$'\t' read -r _tier ts file cwd branch snippet; do
     [[ -z "$file" ]] && continue
-    print_session "$file" "match" "$(match_snippet "$file")"
-done < <(printf '%s\n' "${ROWS[@]}" | sort -rt $'\t' -k1,1)
+    i=$((i + 1))
+    [[ $LIMIT -gt 0 && $i -gt $LIMIT ]] && break
+    when=$(echo "$ts" | sed 's/T/ /; s/\..*//; s/Z//')
+    where=""
+    if [[ -n "$cwd" ]]; then
+        where=" $(abbrev_path "$cwd")"
+        [[ -n "$branch" ]] && where="$where ($branch)"
+        [[ -d "$cwd" ]]    || where="$where [dir gone]"
+    fi
+    printf '%d. %s%s\n' "$i" "${when:-?}" "$where"
+    printf '   %s\n' "$snippet"
+    printf '   %s\n\n' "$(resume_cmd "$file" "$cwd")"
+done < <(printf '%s\n' "${ROWS[@]}" | sort -t$'\t' -k1,1n -k2,2r)
+
+[[ $shown -lt $total ]] && echo "… $((total - shown)) more (--limit 0 for all)"
 
 exit 0
