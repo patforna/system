@@ -1,6 +1,8 @@
-# Roughly weekly — cadence lives in scripts/dagu-jobs.conf; no cron schedule here (see
-# scripts/dagu-reconcile). May now land on a weekday rather than Saturday; it summarises
-# the trailing window, so the weekday it arrives on carries no meaning.
+# Roughly twice weekly — cadence lives in scripts/dagu-jobs.conf; no cron schedule here
+# (see scripts/dagu-reconcile). It summarises the trailing window, so the weekday it
+# arrives on carries no meaning. The mail window in scripts/jobs-digest.sh (--days) must
+# stay matched to the cadence: dedup is within-run only, so an over-long window re-sends
+# the same roles.
 
 # Bound the run defensively — a healthy run is minutes; this caps a hung
 # claude render. Genuine failures fall through to the inherited

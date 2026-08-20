@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-# Weekly jobs digest. Vets last 7 days of label:jobs mail against Patric's
+# Jobs digest, twice weekly. Vets last 4 days of label:jobs mail against Patric's
 # target-role criteria and emails a vetted / borderline / rejected shortlist to
 # NOTIFY_EMAIL. Designed to run via dagu (see dagu/jobs-digest.yaml).
 #
@@ -54,7 +54,7 @@ CHUNK_BUDGET="${JOBS_CHUNK_BUDGET:-20000}"
 
 # 1. Fetch 7 days of jobs-labelled mail (unchanged: gws fetcher, count==0 guard).
 "$PYTHON3" "$SCRIPT_DIR/lib/fetch-gmail-label.py" \
-    --days 7 --label jobs --output "$DATA_FILE" || {
+    --days 4 --label jobs --output "$DATA_FILE" || {
   echo "fetch failed" >&2; exit 1;
 }
 
