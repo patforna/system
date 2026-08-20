@@ -27,10 +27,18 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 # public repo.
 JOBS_DIR="$SCRIPT_DIR/../private/scripts/jobs-digest"
 PIPELINE="$JOBS_DIR/pipeline.py"
-DATA_FILE="/tmp/jobs-digest-data.json"
-WORK_DIR="/tmp/jobs-digest-work"
-HTML_FILE="/tmp/jobs-digest.html"
-SUBJECT_FILE="/tmp/jobs-digest.subject"
+# Scratch paths are per-run, keyed on the dagu run id (PID fallback for a manual
+# `bash` run). The old fixed /tmp locations were shared across every instance, so
+# a second run's startup `rm -rf` wiped an in-flight run's intermediates
+# mid-scoring — merged.json vanished (FileNotFoundError), then reappeared with a
+# different candidate set ("unknown candidate id"). The reconciler serialises its
+# OWN runs, but nothing stops an out-of-band (manual / retrigger) run overlapping,
+# so isolate by run rather than assume single-flight. See private/GOTCHAS.md.
+RUN_TAG="${DAG_RUN_ID:-manual-$$}"
+DATA_FILE="/tmp/jobs-digest-data-${RUN_TAG}.json"
+WORK_DIR="/tmp/jobs-digest-work-${RUN_TAG}"
+HTML_FILE="/tmp/jobs-digest-${RUN_TAG}.html"
+SUBJECT_FILE="/tmp/jobs-digest-${RUN_TAG}.subject"
 DATE=$(date '+%Y-%m-%d')
 
 EXTRACT_MODEL="claude-haiku-4-5-20251001"
@@ -52,9 +60,13 @@ done
 # inside the cap. 20k keeps each call near twice that proven-good size.
 CHUNK_BUDGET="${JOBS_CHUNK_BUDGET:-20000}"
 
-# 1. Fetch 7 days of jobs-labelled mail (unchanged: gws fetcher, count==0 guard).
+# 1. Fetch the trailing window of jobs-labelled mail (gws fetcher, count==0
+# guard). --days must stay matched to the DAG's SLO in scripts/dagu-jobs.conf.
+# --exclude-subject drops this digest's own past emails: they carry label:jobs,
+# run 80k+ chars, blow the chunk budget, and can only re-extract last week.
 "$PYTHON3" "$SCRIPT_DIR/lib/fetch-gmail-label.py" \
-    --days 4 --label jobs --output "$DATA_FILE" || {
+    --days 4 --label jobs --exclude-subject "Jobs digest" \
+    --output "$DATA_FILE" || {
   echo "fetch failed" >&2; exit 1;
 }
 
@@ -68,8 +80,11 @@ if (( count == 0 )); then
 fi
 
 # 2. Chunk. WORK_DIR keeps every intermediate (chunks, envelopes, validated
-# roles, merged list, scoring) for post-mortems; rebuilt per run so nothing
-# stale leaks across weeks.
+# roles, merged list, scoring) for post-mortems. The dir is per-run and unique by
+# construction, so nothing stale can leak in; sweep siblings older than 2 days so
+# per-run dirs don't accumulate in /tmp (the +2 age can't touch a live run).
+find /tmp -maxdepth 1 -name 'jobs-digest-work-*' -type d -mtime +2 -exec rm -rf {} + 2>/dev/null || true
+find /tmp -maxdepth 1 -type f \( -name 'jobs-digest-data-*.json' -o -name 'jobs-digest-*.html' -o -name 'jobs-digest-*.subject' \) -mtime +2 -delete 2>/dev/null || true
 rm -rf "$WORK_DIR"
 rm -f "$HTML_FILE" "$SUBJECT_FILE"
 mkdir -p "$WORK_DIR/chunks" "$WORK_DIR/items"
