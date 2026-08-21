@@ -19,6 +19,31 @@ set -uo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/dagu-common.sh"
 require_notify_email
 
+# Single-run lock. Any trigger path can start a second run: base.yaml's
+# `overlap_policy: skip` governs SCHEDULER-triggered runs, and this system has
+# no schedules — dagu-reconcile (and a human) both use `dagu start`, which
+# bypasses it. Two runs share the fixed /tmp paths below, and the `rm -rf
+# "$WORK_DIR"` further down deletes the other's state mid-flight. Seen
+# 2026-08-20: the losing run died on a missing merged.json, then validated its
+# scoring against a swapped candidate set ("unknown candidate id"), burned three
+# attempts, sent nothing, and escalated to autofix. mkdir is atomic; the pid
+# file lets a run that was SIGKILLed (DAG timeout — no EXIT trap) be cleaned up
+# rather than blocking every future run. Exit 0, not 1: a skipped duplicate is
+# not a failure and must not trigger the autofix handler.
+LOCK_DIR="/tmp/tech-news-digest.lock"
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+  holder=$(cat "$LOCK_DIR/pid" 2>/dev/null || echo "")
+  if [[ -n "$holder" ]] && kill -0 "$holder" 2>/dev/null; then
+    echo "another tech-news-digest run (pid $holder) is in flight — skipping" >&2
+    exit 0
+  fi
+  echo "clearing stale tech-news-digest lock (pid ${holder:-unknown})" >&2
+  rm -rf "$LOCK_DIR"
+  mkdir "$LOCK_DIR" || { echo "cannot acquire tech-news-digest lock" >&2; exit 1; }
+fi
+echo $$ > "$LOCK_DIR/pid"
+trap 'rm -rf "$LOCK_DIR"' EXIT
+
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 DATA_FILE="/tmp/tech-news-data.json"
 WORK_DIR="/tmp/tech-news-work"
@@ -50,13 +75,17 @@ CHUNK_BUDGET="${TECH_NEWS_CHUNK_BUDGET:-80000}"
 # broken archive never loses a digest. The count<30 floor below is the final
 # guard regardless of source.
 fetched_via="msgvault"
+# --exclude-subject drops this digest's own past emails, which carry
+# label:tech-news and would otherwise be re-ingested as source material.
 if ! "$PYTHON3" "$SCRIPT_DIR/lib/fetch-msgvault-label.py" \
-       --days 7 --label tech-news --output "$DATA_FILE" \
+       --days 7 --label tech-news --exclude-subject "Tech-news digest" \
+       --output "$DATA_FILE" \
    || (( $(jq length "$DATA_FILE" 2>/dev/null || echo 0) < 30 )); then
   echo "msgvault fetch unavailable or thin — falling back to gws" >&2
   fetched_via="gws"
   "$PYTHON3" "$SCRIPT_DIR/lib/fetch-gmail-label.py" \
-      --days 7 --label tech-news --output "$DATA_FILE" || {
+      --days 7 --label tech-news --exclude-subject "Tech-news digest" \
+      --output "$DATA_FILE" || {
     echo "fetch failed" >&2; exit 1;
   }
 fi

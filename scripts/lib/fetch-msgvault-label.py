@@ -16,7 +16,7 @@ fine for a 7-day digest). Pass --no-sync to skip it.
 
 Output: array of {id, thread_id, from, subject, date, snippet, body} sorted by
 date asc. Body is msgvault's plaintext (body_text), or HTML stripped to
-plaintext-ish when only body_html exists, truncated at 30k chars.
+plaintext-ish when only body_html exists, truncated at 100k chars.
 
 The caller (tech-news-digest.sh) falls back to fetch-gmail-label.py if this
 returns too few messages, so a stale/empty archive never loses a digest.
@@ -102,6 +102,13 @@ def main():
     ap.add_argument("--output", required=True)
     ap.add_argument("--no-sync", action="store_true",
                     help="skip the pre-fetch msgvault sync (use existing archive)")
+    # See fetch-gmail-label.py: a digest's own output carries the label it
+    # reads, so without this each run re-ingests its previous email. Filtered
+    # here rather than in the search query — msgvault's negation syntax is not
+    # guaranteed to match Gmail's.
+    ap.add_argument("--exclude-subject", action="append", default=[],
+                    help="skip messages whose subject contains this "
+                         "(case-insensitive); repeatable")
     args = ap.parse_args()
 
     if not args.no_sync:
@@ -118,6 +125,11 @@ def main():
                 json.JSONDecodeError) as e:
             print(f"skipping {mid}: {e}", file=sys.stderr)
             skipped += 1
+            continue
+        subject = msg.get("subject", "")
+        if any(x.lower() in subject.lower() for x in args.exclude_subject):
+            print(f"skipping {mid}: excluded subject {subject!r}",
+                  file=sys.stderr)
             continue
         body = (msg.get("body_text") or "").strip()
         if not body and msg.get("body_html"):

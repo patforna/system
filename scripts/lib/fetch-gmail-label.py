@@ -2,7 +2,7 @@
 """Fetch messages with a given Gmail label (last N days) into a JSON file.
 
 Output: array of {id, thread_id, from, subject, date, snippet, body} sorted by date asc.
-Body is plaintext (preferred) or HTML stripped to plaintext-ish, truncated at 30k chars.
+Body is plaintext (preferred) or HTML stripped to plaintext-ish, truncated at 100k chars.
 """
 
 import argparse, base64, html, json, re, subprocess, sys, time
@@ -110,6 +110,14 @@ def main():
     ap.add_argument("--days", type=int, default=7)
     ap.add_argument("--label", required=True)
     ap.add_argument("--output", required=True)
+    # A digest mails itself to NOTIFY_EMAIL and that mail lands under the very
+    # label the next run reads, so each digest re-ingests its own last output:
+    # an 80k+ body that blows the chunk budget, can't be split, and times out
+    # every run while only ever re-extracting last week's items. Callers pass
+    # their own subject marker here to break the loop.
+    ap.add_argument("--exclude-subject", action="append", default=[],
+                    help="skip messages whose subject contains this "
+                         "(case-insensitive); repeatable")
     args = ap.parse_args()
 
     ids = list_ids(f"label:{args.label} newer_than:{args.days}d")
@@ -127,6 +135,11 @@ def main():
             continue
         headers = {h["name"].lower(): h["value"]
                    for h in msg["payload"].get("headers", [])}
+        subject = headers.get("subject", "")
+        if any(x.lower() in subject.lower() for x in args.exclude_subject):
+            print(f"skipping {mid}: excluded subject {subject!r}",
+                  file=sys.stderr)
+            continue
         body = extract_body(msg)
         # Cap only pathological sizes — 30k truncated the densest aggregators
         # mid-list (AINews/The Pulse/The Batch run 34-56k), dropping stories;

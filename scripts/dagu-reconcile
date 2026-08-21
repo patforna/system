@@ -125,6 +125,19 @@ while read -r job slo_hours; do
     break
   fi
 
+  # A run already in flight must be left alone. `dagu start` on a running DAG
+  # SIGTERMs the incumbent and starts over, and an in-flight run has not
+  # succeeded, so it stays overdue and the next tick restarts it again: any job
+  # whose runtime exceeds the 15-minute tick can never finish once overdue.
+  # Observed 2026-08-20 — jobs-digest (~40 min) was restarted five times in an
+  # afternoon, each kill also waking an autofix session, so it self-amplified.
+  # Skipping is safe: the job keeps its overdue status and the tick after it
+  # finishes will run it if it still needs running.
+  if "$DAGU" status "$job" 2>/dev/null | head -1 | grep -qE '^(Running|Queued)'; then
+    log "  ${job}: already in flight — leaving it alone"
+    continue
+  fi
+
   log "running ${job} (last success ${age}s ago, slo ${slo_secs}s)"
   if "$DAGU" start "$job" >/dev/null 2>&1; then
     log "  ${job}: ok"

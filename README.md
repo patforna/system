@@ -107,7 +107,7 @@ Local [Dagu](https://dagu.cloud/) instance runs the jobs in [`dagu/`](dagu/) —
 | `drift-check`           | ~6.5d               | [`scripts/drift-check`](scripts/drift-check) `--local --notify` — emails local drift, exits 0 (no autofix). Remote parity is gated in `dev-up`, not here. |
 | `tad-daily-code-review` | 20h                 | Sweeps non-`/auto-task` commits on `main`, ships safe Minor/Nit autofixes via auto-merged PR, escalates Critical/Major as a review PR (email fallback) |
 | `droplet-watchdog`      | 4h                  | Emails + macOS-notifies if the `dev` DigitalOcean droplet has been up >24h. NB: can't run while the Mac is off — the one job that would benefit from an always-on host. |
-| `jobs-digest`           | ~6.5d               | Vets recent `label:jobs` mail via `claude -p` against target-role criteria; HTML email                |
+| `jobs-digest`           | 78h                 | Vets recent `label:jobs` mail via `claude -p` against target-role criteria; HTML email                |
 | `tech-news-digest`      | ~6.5d               | Extracts stories from recent `label:tech-news` mail via chunked `claude -p` calls, one ranking call, HTML rendered in-script |
 | `workflow-digest`       | 20h                 | [`dagu-digest.sh`](scripts/dagu-digest.sh) — reports each job's freshness vs SLO; runs last so it reflects this pass |
 
@@ -126,7 +126,8 @@ There are **no cron schedules and no fixed times**. Weekly-ish jobs (SLO ~6.5d) 
 | `[TAD SWEEP] <range> — needs a human`                    | Sweep escalation with no reviewable fix   |
 | `[DRIFT] N untracked item(s)`                            | On drift-check, only when the set changed |
 | `Dev droplet running for Xd Yh`                          | Droplet up >24h                           |
-| `[Jobs digest]` / `[Tech-news digest]`                   | Roughly weekly                            |
+| `[Jobs digest]`                                          | Roughly twice weekly                      |
+| `[Tech-news digest]`                                     | Roughly weekly                            |
 
 Daily digest `<status>` is `all ok`, optionally with a suffix like `(2 idle by design)` or `(1 drift pending)`, or `N need attention`. Each row carries a marker:
 
