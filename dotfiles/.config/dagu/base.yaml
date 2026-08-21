@@ -179,8 +179,18 @@ handler_on:
   # retry (observed on tad-backup-edgar), which is what turned the daily digest into a
   # stream of false ATTN alarms. A marker touched by dagu itself, only on success, can't
   # lie in that direction. $DAG_NAME is set for every step and handler.
+  #
+  # The no-op opt-out: a step that exits 0 WITHOUT doing its work still lands
+  # here, and stamping then resets the SLO clock for a run that produced
+  # nothing — a silently missed cycle that the daily digest reports as `all ok`.
+  # The digests' single-run lock is exactly that case (it exits 0 when another
+  # run holds the lock, deliberately, so a duplicate does not wake autofix).
+  # A job that did no work touches /tmp/dagu-noop-$DAG_NAME and is not stamped.
+  # Jobs that never write the file are unaffected. The failure direction is
+  # safe by construction: not stamping leaves the job overdue, so it simply
+  # runs again, whereas a false stamp hides the miss for a full SLO period.
   success:
-    command: bash -c 'mkdir -p "$HOME/.local/state/dagu-success" && touch "$HOME/.local/state/dagu-success/$DAG_NAME"'
+    command: bash -c 'n="/tmp/dagu-noop-$DAG_NAME"; if [ -e "$n" ]; then rm -f "$n"; exit 0; fi; mkdir -p "$HOME/.local/state/dagu-success" && touch "$HOME/.local/state/dagu-success/$DAG_NAME"'
   failure:
     command: bash $HOME/github/system/scripts/dagu-autofix.sh
 

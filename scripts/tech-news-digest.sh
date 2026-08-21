@@ -22,27 +22,50 @@ require_notify_email
 # Single-run lock. Any trigger path can start a second run: base.yaml's
 # `overlap_policy: skip` governs SCHEDULER-triggered runs, and this system has
 # no schedules — dagu-reconcile (and a human) both use `dagu start`, which
-# bypasses it. Two runs share the fixed /tmp paths below, and the `rm -rf
-# "$WORK_DIR"` further down deletes the other's state mid-flight. Seen
-# 2026-08-20: the losing run died on a missing merged.json, then validated its
-# scoring against a swapped candidate set ("unknown candidate id"), burned three
-# attempts, sent nothing, and escalated to autofix. mkdir is atomic; the pid
-# file lets a run that was SIGKILLed (DAG timeout — no EXIT trap) be cleaned up
-# rather than blocking every future run. Exit 0, not 1: a skipped duplicate is
-# not a failure and must not trigger the autofix handler.
+# bypasses it. Two runs would then race the shared Gmail fetch and each other's
+# scratch state. Observed in jobs-digest on 2026-08-20, before its scratch
+# paths were per-run: the losing run died on a missing merged.json, then
+# validated its scoring against a swapped candidate set, sent nothing, and
+# escalated. This script still uses FIXED scratch paths, so the same shape
+# applies here directly.
+#
+# mkdir is the atomic acquire. The pid file is written immediately after, so a
+# competitor can arrive in between and see an empty pid — treating that as
+# stale would let it delete a live run's lock, which is the exact overlap this
+# guards. An absent pid is therefore "held" while the lock is young, and only
+# stale once far older than any plausible start-up. A live pid holding a lock
+# older than the DAG's own timeout means the pid was recycled, so age overrides
+# liveness there too. Exit 0, never 1: a skipped duplicate is not a failure and
+# must not wake the autofix handler — that is what turned one collision into a
+# cascade. The no-op flag keeps that exit 0 from stamping the SLO marker.
 LOCK_DIR="/tmp/tech-news-digest.lock"
+LOCK_STALE_SECS=${LOCK_STALE_SECS:-10800}   # 3h; the DAG's own cap is 5400s
+NOOP_FLAG="/tmp/dagu-noop-${DAG_NAME:-tech-news-digest}"
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then
   holder=$(cat "$LOCK_DIR/pid" 2>/dev/null || echo "")
-  if [[ -n "$holder" ]] && kill -0 "$holder" 2>/dev/null; then
-    echo "another tech-news-digest run (pid $holder) is in flight — skipping" >&2
+  age=$(( $(date +%s) - $(stat -f %m "$LOCK_DIR" 2>/dev/null || echo 0) ))
+  if [[ -n "$holder" ]]; then
+    kill -0 "$holder" 2>/dev/null && (( age < LOCK_STALE_SECS )) && held=1 || held=0
+  else
+    (( age < 60 )) && held=1 || held=0   # holder mid-acquire, not stale
+  fi
+  if (( held )); then
+    touch "$NOOP_FLAG"
+    echo "another tech-news-digest run (pid ${holder:-starting}) is in flight — skipping" >&2
     exit 0
   fi
-  echo "clearing stale tech-news-digest lock (pid ${holder:-unknown})" >&2
+  echo "clearing stale tech-news-digest lock (pid ${holder:-unknown}, age ${age}s)" >&2
   rm -rf "$LOCK_DIR"
-  mkdir "$LOCK_DIR" || { echo "cannot acquire tech-news-digest lock" >&2; exit 1; }
+  if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+    touch "$NOOP_FLAG"
+    echo "another tech-news-digest run took the lock first — skipping" >&2
+    exit 0
+  fi
 fi
 echo $$ > "$LOCK_DIR/pid"
 trap 'rm -rf "$LOCK_DIR"' EXIT
+# This run is doing the work, so clear any no-op flag a skipped sibling left.
+rm -f "$NOOP_FLAG"
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 DATA_FILE="/tmp/tech-news-data.json"

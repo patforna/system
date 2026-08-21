@@ -133,10 +133,16 @@ while read -r job slo_hours; do
   # afternoon, each kill also waking an autofix session, so it self-amplified.
   # Skipping is safe: the job keeps its overdue status and the tick after it
   # finishes will run it if it still needs running.
-  if "$DAGU" status "$job" 2>/dev/null | head -1 | grep -qE '^(Running|Queued)'; then
-    log "  ${job}: already in flight — leaving it alone"
-    continue
-  fi
+  # No pipe: `set -o pipefail` plus a `head` that closes early would make this
+  # test read as false if dagu ever died of SIGPIPE, silently disabling the
+  # guard. Captured whole, first line taken by parameter expansion.
+  status_out=$("$DAGU" status "$job" 2>/dev/null || true)
+  case "${status_out%%$'\n'*}" in
+    Running*|Queued*)
+      log "  ${job}: already in flight — leaving it alone"
+      continue
+      ;;
+  esac
 
   log "running ${job} (last success ${age}s ago, slo ${slo_secs}s)"
   if "$DAGU" start "$job" >/dev/null 2>&1; then

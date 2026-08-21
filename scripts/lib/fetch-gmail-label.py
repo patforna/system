@@ -121,7 +121,7 @@ def main():
     args = ap.parse_args()
 
     ids = list_ids(f"label:{args.label} newer_than:{args.days}d")
-    out = []
+    out, excluded = [], 0
     skipped = []
     for mid in ids:
         try:
@@ -139,6 +139,7 @@ def main():
         if any(x.lower() in subject.lower() for x in args.exclude_subject):
             print(f"skipping {mid}: excluded subject {subject!r}",
                   file=sys.stderr)
+            excluded += 1
             continue
         body = extract_body(msg)
         # Cap only pathological sizes — 30k truncated the densest aggregators
@@ -161,7 +162,8 @@ def main():
         json.dump(out, f, indent=2, ensure_ascii=False)
     print(f"wrote {len(out)} messages to {args.output} "
           f"({sum(len(x['body']) for x in out):,} body chars); "
-          f"skipped {len(skipped)} after retries", file=sys.stderr)
+          f"skipped {len(skipped)} after retries, "
+          f"excluded {excluded} by subject", file=sys.stderr)
 
 
 if __name__ == "__main__":

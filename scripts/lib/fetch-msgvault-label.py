@@ -116,7 +116,7 @@ def main():
 
     hits = mv(["search", f"label:{args.label} newer_than:{args.days}d",
                "-n", "500"])
-    out, skipped = [], 0
+    out, skipped, excluded = [], 0, 0
     for h in hits:
         mid = h.get("id")
         try:
@@ -130,6 +130,7 @@ def main():
         if any(x.lower() in subject.lower() for x in args.exclude_subject):
             print(f"skipping {mid}: excluded subject {subject!r}",
                   file=sys.stderr)
+            excluded += 1
             continue
         body = (msg.get("body_text") or "").strip()
         if not body and msg.get("body_html"):
@@ -158,7 +159,8 @@ def main():
         json.dump(out, f, indent=2, ensure_ascii=False)
     print(f"wrote {len(out)} messages to {args.output} "
           f"({sum(len(x['body']) for x in out):,} body chars) from msgvault; "
-          f"skipped {skipped}", file=sys.stderr)
+          f"skipped {skipped}, excluded {excluded} by subject",
+          file=sys.stderr)
 
 
 if __name__ == "__main__":
