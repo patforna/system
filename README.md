@@ -154,6 +154,8 @@ Claude reads WhatsApp through [verygoodplugins/whatsapp-mcp](https://github.com/
 
 **Read-only by deny rule.** The five write tools (`send_message`, `send_reaction`, `send_file`, `send_audio_message`, `mark_messages_read`) are listed under `permissions.deny` in `~/.claude/settings.json`, which removes them from Claude's context entirely rather than prompting — so it holds under `--dangerously-skip-permissions` too. Claude drafts replies; sending stays manual. Delete those five lines to enable sending.
 
+That file is deliberately **not** tracked here and not compared by `drift-check` — see *drift-check Claude settings…* in [`GOTCHAS`](private/GOTCHAS.md), where mirroring it was tried four times and abandoned. So the deny rules are local-only state: nothing will flag their absence, and a re-provisioned machine comes back **send-enabled**. Re-add them by hand after any `~/.claude` reset.
+
 Two standing caveats: linking a personal number via the reverse-engineered protocol breaches WhatsApp's ToS and carries a small but real ban risk (Meta warned/banned `whatsmeow` users in May 2025, including low-volume reply-only accounts); and any MCP with access to private messages is exposed to the [lethal trifecta](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/) — incoming messages are untrusted text. The deny rules close the WhatsApp-native exfiltration path.
 
 Re-pairing (QR rescan) is needed if the phone is offline >14 days, the device is unlinked, or WhatsApp revokes the session. The bridge only prints its **first** QR and each code is valid ~60s, so on a stale code restart the bridge rather than waiting out its 5-minute retry.
