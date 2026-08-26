@@ -140,6 +140,24 @@ Daily digest `<status>` is `all ok`, optionally with a suffix like `(2 idle by d
 
 DAG failures route through [`scripts/dagu-autofix.sh`](scripts/dagu-autofix.sh) (wired in via `handler_on.failure` in [`base.yaml`](dotfiles/.config/dagu/base.yaml)), which hands the failure to a local Claude session. Classification and behaviour live in the prompt; outcomes append to `~/.local/state/dagu-autofix.jsonl` so the daily digest can mark a handled failure `FIXED` instead of `ATTN`.
 
+## WhatsApp (MCP)
+
+Claude reads WhatsApp through [verygoodplugins/whatsapp-mcp](https://github.com/verygoodplugins/whatsapp-mcp) (a maintained fork — the popular `lharries` original has been unmerged since April 2025), cloned at `~/github/whatsapp-mcp`. A Go bridge links as a WhatsApp **companion device** via `whatsmeow` and mirrors messages into local SQLite; a Python MCP server reads that DB and is registered in Claude Code user scope as `whatsapp`.
+
+| Piece      | Where                                                                 |
+|------------|-----------------------------------------------------------------------|
+| Config     | `~/github/whatsapp-mcp/.env` — **not auto-loaded**; launchers source it explicitly |
+| Bridge     | `com.whatsapp-mcp.bridge` + `.bridge-monitor` LaunchAgents, port **8099** (8080 is dagu) |
+| Data       | `~/github/whatsapp-mcp/whatsapp-bridge/store/` — messages, session, REST token |
+| Logs       | `~/Library/Logs/whatsapp-mcp/`                                        |
+| Reinstall  | `set -a; source .env; set +a; scripts/install-launchd-macos.sh`        |
+
+**Read-only by deny rule.** The five write tools (`send_message`, `send_reaction`, `send_file`, `send_audio_message`, `mark_messages_read`) are listed under `permissions.deny` in `~/.claude/settings.json`, which removes them from Claude's context entirely rather than prompting — so it holds under `--dangerously-skip-permissions` too. Claude drafts replies; sending stays manual. Delete those five lines to enable sending.
+
+Two standing caveats: linking a personal number via the reverse-engineered protocol breaches WhatsApp's ToS and carries a small but real ban risk (Meta warned/banned `whatsmeow` users in May 2025, including low-volume reply-only accounts); and any MCP with access to private messages is exposed to the [lethal trifecta](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/) — incoming messages are untrusted text. The deny rules close the WhatsApp-native exfiltration path.
+
+Re-pairing (QR rescan) is needed if the phone is offline >14 days, the device is unlinked, or WhatsApp revokes the session. The bridge only prints its **first** QR and each code is valid ~60s, so on a stale code restart the bridge rather than waiting out its 5-minute retry.
+
 ## Remote box
 
 See [`remote/README.md`](remote/README.md) for the full playbook.
