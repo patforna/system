@@ -678,7 +678,8 @@ run_remote_checks() {
   # Mac-only tools that shouldn't be on the droplet. git-crypt is NOT here:
   # the droplet needs it (apt-installed by remote/bootstrap.sh) or private/
   # stays encrypted — keep the check guarding against its removal.
-  mac_only_tools="agg|asciinema|ccusage|cloc|coreutils|dagu|doctl|duckdb|duti|epubcheck|ffmpeg|gemini-cli|git-filter-repo|glow|googleworkspace-cli|imagemagick|mas|poppler|python@3.12|restic|trash|tree|try|watch|yarn|yt-dlp|zsh-autosuggestions|zsh-syntax-highlighting|zsh|git"
+  # go is here only for the WhatsApp bridge, which is macOS-LaunchAgent-bound.
+  mac_only_tools="agg|asciinema|ccusage|cloc|coreutils|dagu|doctl|duckdb|duti|epubcheck|ffmpeg|gemini-cli|git-filter-repo|glow|go|googleworkspace-cli|imagemagick|mas|poppler|python@3.12|restic|trash|tree|try|watch|yarn|yt-dlp|zsh-autosuggestions|zsh-syntax-highlighting|zsh|git"
 
   # Extract CLI tool names from Brewfile (formulae only)
   brewfile_cli=$(grep '^brew ' "$BREWFILE" | sed 's/^brew "\(.*\)"/\1/' | sed 's|.*/||' | grep -vE "^(${mac_only_tools})$" | sort)
