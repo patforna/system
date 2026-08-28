@@ -23,7 +23,7 @@
   "security.workspace.trust.untrustedFiles": "open",
 
   // --- Files ---
-  "files.autoSave": "off",
+  "files.autoSave": "afterDelay",
   "files.trimTrailingWhitespace": true,
   "files.exclude": {
     "**/__pycache__": true,
