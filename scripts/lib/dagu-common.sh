@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # scripts/lib/dagu-common.sh — sourced by the claude-invoking DAG scripts.
 # Assumes the caller has set -uo pipefail.
 DAGU_COMMON_CONF="${HOME}/github/system/private/droplet-watchdog.conf"

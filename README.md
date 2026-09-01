@@ -2,6 +2,8 @@
 
 Mac + remote dev environment, fully automated. One script to bootstrap a new Mac, another for an Ubuntu box. Drift detection catches anything that goes untracked. Private files are encrypted via git-crypt.
 
+[![CI](https://github.com/patforna/system/actions/workflows/ci.yml/badge.svg)](https://github.com/patforna/system/actions/workflows/ci.yml)
+
 ```
 dotfiles/              # config files, symlinked into $HOME
 private/               # encrypted (git-crypt): SSH config, personal scripts, etc.
