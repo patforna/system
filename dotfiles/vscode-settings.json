@@ -11,6 +11,7 @@
   "editor.minimap.enabled": false,
   "editor.inlayHints.enabled": "off",
   "editor.largeFileOptimizations": false,
+  "zenMode.fullScreen": false,
 
   // --- Startup ---
   "workbench.startupEditor": "none",
