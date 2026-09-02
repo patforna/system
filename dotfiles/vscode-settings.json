@@ -12,7 +12,6 @@
   "editor.inlayHints.enabled": "off",
   "editor.largeFileOptimizations": false,
   "zenMode.fullScreen": false,
-  "zenMode.showTabs": "none",
 
   // --- Startup ---
   "workbench.startupEditor": "none",
