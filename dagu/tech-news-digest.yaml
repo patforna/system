@@ -5,10 +5,18 @@
 # same Gmail account at once. Note this may now land on a weekday rather than Saturday —
 # it summarises the trailing window, so the weekday it arrives on carries no meaning.
 
-# Bound the run defensively — a healthy run is ~20-60 min (chunked extraction
-# dominates); this caps a wedged run. Genuine failures fall through to the
-# inherited handler_on.failure (dagu-autofix.sh) like every other DAG.
-timeout_sec: 5400
+# Bound the run defensively — this caps a wedged run, it does not size a healthy
+# one. Genuine failures fall through to the inherited handler_on.failure
+# (dagu-autofix.sh) like every other DAG.
+#
+# 10800s (3h), raised from 5400s on 09-03: the healthy path outgrew 90m. Serial
+# extraction is 24-25 haiku calls at ~3-5 min each (~100-120 min on its own), so
+# the run was reaped mid-Ranking every time — three times on 09-03 alone, each
+# after a clean 105/105 extraction. Note dagu's timer is MONOTONIC and does not
+# advance while the Mac sleeps, so this is a budget of AWAKE time; a run can span
+# far more wall clock (3h44m observed on 08-27). This buys headroom, it is not
+# the fix — extraction needs parallelising. See private/GOTCHAS.md.
+timeout_sec: 10800
 
 steps:
   - name: tech-news-digest

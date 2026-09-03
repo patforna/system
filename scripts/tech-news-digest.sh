@@ -86,7 +86,8 @@ done
 
 # Body-character budget per extraction chunk. THE runtime lever: smaller
 # chunks mean more (but faster, more reliable) haiku calls; the whole run must
-# stay inside the DAG's 5400s timeout. Must also stay well under ARG_MAX
+# stay inside the DAG's timeout (10800s, and 80000 does NOT comfortably fit —
+# see the yaml). Must also stay well under ARG_MAX
 # (~1MB) — the chunk JSON travels inline in the prompt argument, since the
 # extraction calls run tool-less and cannot read files.
 CHUNK_BUDGET="${TECH_NEWS_CHUNK_BUDGET:-80000}"

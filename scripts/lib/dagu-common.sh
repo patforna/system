@@ -26,10 +26,11 @@ require_notify_email() {
 # watchdog that TERM→KILLs claude's process group, so the cap holds even without
 # the dependency. See system GOTCHAS.md "tad-daily-code-review hangs".
 #
-# Value reconciles with the callers' DAG timeout_sec (all 5400s / 90m): the
-# script-level retry must finish INSIDE that window or the (loose, proven
-# unreliable) dagu timer cuts in mid-retry and SIGKILLs the script again. With
-# MAX_ATTEMPTS=3 and the 30+60s backoffs: 3*1500 + 90 = 4590s < 5400s. 25m/attempt
+# Value reconciles with the callers' DAG timeout_sec (5400s / 90m, except
+# tech-news-digest at 10800s): the script-level retry must finish INSIDE that
+# window or the (loose, proven unreliable) dagu timer cuts in mid-retry and
+# SIGKILLs the script again. With MAX_ATTEMPTS=3 and the 30+60s backoffs:
+# 3*1500 + 90 = 4590s < 5400s, so the tightest caller still fits. 25m/attempt
 # is also generous against the healthy path (minutes) — a single attempt running
 # longer is degenerate (hung, or claude internally grinding on a slow API night),
 # exactly what we want to cap and retry rather than let grind for hours.
