@@ -14,8 +14,8 @@
 # the run was reaped mid-Ranking every time — three times on 09-03 alone, each
 # after a clean 105/105 extraction. Note dagu's timer is MONOTONIC and does not
 # advance while the Mac sleeps, so this is a budget of AWAKE time; a run can span
-# far more wall clock (3h44m observed on 08-27). This buys headroom, it is not
-# the fix — extraction needs parallelising. See private/GOTCHAS.md.
+# far more wall clock (3h44m observed on 08-27). Extraction went 4-wide on 09-04
+# (healthy path now ~30-40 min); 3h stays as the wedge cap. See private/GOTCHAS.md.
 timeout_sec: 10800
 
 steps:

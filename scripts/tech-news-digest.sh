@@ -26,8 +26,9 @@ require_notify_email
 # scratch state. Observed in jobs-digest on 2026-08-20, before its scratch
 # paths were per-run: the losing run died on a missing merged.json, then
 # validated its scoring against a swapped candidate set, sent nothing, and
-# escalated. This script still uses FIXED scratch paths, so the same shape
-# applies here directly.
+# escalated. Scratch paths are per-run here too (below), which removes the
+# corruption; the lock still stops two runs racing the Gmail fetch and paying
+# for the same extraction twice.
 #
 # mkdir is the atomic acquire. The pid file is written immediately after, so a
 # competitor can arrive in between and see an empty pid — treating that as
@@ -68,9 +69,16 @@ trap 'rm -rf "$LOCK_DIR"' EXIT
 rm -f "$NOOP_FLAG"
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-DATA_FILE="/tmp/tech-news-data.json"
-WORK_DIR="/tmp/tech-news-work"
-HTML_FILE="/tmp/tech-news.html"
+# Scratch paths are per-run, keyed on the dagu run id (PID fallback for a
+# manual `bash` run) — the jobs-digest 2026-08-20 fix, see private/GOTCHAS.md.
+# The extraction workers below make this load-bearing: a forced stop can leave
+# a worker's claude call running past this run, and with fixed paths the next
+# run's startup `rm -rf` would rebuild the tree under it and adopt whatever the
+# straggler then wrote as its own extraction.
+RUN_TAG="${DAG_RUN_ID:-manual-$$}"
+DATA_FILE="/tmp/tech-news-data-${RUN_TAG}.json"
+WORK_DIR="/tmp/tech-news-work-${RUN_TAG}"
+HTML_FILE="/tmp/tech-news-${RUN_TAG}.html"
 PIPELINE="$SCRIPT_DIR/tech-news/pipeline.py"
 DATE=$(date '+%Y-%m-%d')
 
@@ -84,13 +92,25 @@ for f in tech-news/extraction-prompt.md tech-news/extraction-schema.json \
   [[ -s "$SCRIPT_DIR/$f" ]] || { echo "$f missing or empty" >&2; exit 1; }
 done
 
-# Body-character budget per extraction chunk. THE runtime lever: smaller
-# chunks mean more (but faster, more reliable) haiku calls; the whole run must
-# stay inside the DAG's timeout (10800s, and 80000 does NOT comfortably fit —
-# see the yaml). Must also stay well under ARG_MAX
-# (~1MB) — the chunk JSON travels inline in the prompt argument, since the
-# extraction calls run tool-less and cannot read files.
+# Body-character budget per extraction chunk. A runtime lever, with
+# EXTRACT_WIDTH below: smaller chunks mean more (but faster, more reliable)
+# haiku calls; the whole run must stay inside the DAG's timeout (10800s — a
+# 24-chunk week extracts in ~20 min at width 4). Must also stay well under
+# ARG_MAX (~1MB) — the chunk JSON travels inline in the prompt argument,
+# since the extraction calls run tool-less and cannot read files.
 CHUNK_BUDGET="${TECH_NEWS_CHUNK_BUDGET:-80000}"
+
+# Extraction calls in flight at once. Each is a node process idling on a
+# ~3-minute API response, so a few cost little locally; the unknowns are
+# API-side (rate limits, whether concurrent calls each run slower), which is
+# why this is 4 and not 24.
+EXTRACT_WIDTH="${TECH_NEWS_EXTRACT_WIDTH:-4}"
+# A width of 0 (or junk) would launch nothing, report full coverage and rank
+# an empty list — a silent wrong digest — so refuse it here. 16 is a typo
+# bound, not a tuning: beyond it the API side is the unknown.
+[[ "$EXTRACT_WIDTH" =~ ^[1-9][0-9]?$ ]] && (( EXTRACT_WIDTH <= 16 )) || {
+  echo "TECH_NEWS_EXTRACT_WIDTH must be 1-16, got '$EXTRACT_WIDTH'" >&2; exit 1;
+}
 
 # 1. Fetch 7 days of tech-news mail. Primary: the local msgvault archive —
 # reads touch Gmail zero times, so the gws exit-5 failure mode (~100 sequential
@@ -125,8 +145,12 @@ if (( count < 30 )); then
 fi
 
 # 2. Chunk. WORK_DIR keeps every intermediate (chunks, claude envelopes,
-# validated items, merged list, ranking) for post-mortems; it is rebuilt per
-# run so nothing stale leaks across weeks.
+# validated items, merged list, ranking) for post-mortems. The dir is per-run
+# and unique by construction, so nothing stale can leak in; sweep siblings
+# older than 2 days so per-run dirs don't accumulate in /tmp (the +2 age can't
+# touch a live run).
+find /tmp -maxdepth 1 -name 'tech-news-work-*' -type d -mtime +2 -exec rm -rf {} + 2>/dev/null || true
+find /tmp -maxdepth 1 -type f \( -name 'tech-news-data-*.json' -o -name 'tech-news-*.html' \) -mtime +2 -delete 2>/dev/null || true
 rm -rf "$WORK_DIR"
 rm -f "$HTML_FILE"
 mkdir -p "$WORK_DIR/chunks" "$WORK_DIR/items"
@@ -136,25 +160,40 @@ mkdir -p "$WORK_DIR/chunks" "$WORK_DIR/items"
 }
 
 # 3. Extraction: one haiku call per chunk against the extraction schema,
-# sequential (each claude process is heavy; bounded runtime and readable logs
-# beat parallelism). Two retry layers, deliberately distinct: run_claude_json
-# retries TRANSPORT faults (API blips, hangs) internally — a chunk it still
-# fails on is failed outright, never re-retried here; this loop's attempts
-# are consumed only by semantically INVALID responses (structured_output
-# null, alien message ids), twice, then the chunk is marked failed and the
-# run carries on. The per-attempt cap drops to 300s for this phase only —
-# haiku on a <=80k-char prompt finishes in minutes, and the default 1500s
-# would let one rare hang eat the DAG window multiplied across dozens of
-# calls.
+# EXTRACT_WIDTH chunks in flight at once. Ran sequentially until 09-03 (a
+# claude process is heavy; readable logs), but 24-25 calls at ~3 min each is
+# ~80 min — the whole DAG window — and the run was reaped mid-Ranking three
+# times that day (see private/GOTCHAS.md). Two retry layers, deliberately
+# distinct: run_claude_json retries TRANSPORT faults (API blips, hangs)
+# internally — a chunk it still fails on is failed outright, never re-retried
+# here; extract_chunk's attempts are consumed only by semantically INVALID
+# responses (structured_output null, alien message ids), twice, then the
+# chunk is marked failed and the run carries on. The per-attempt cap drops to
+# 600s for this phase only: a healthy call is 1-5 min (79 sleep-corrected
+# calls on 09-03: p50 183s, p95 281s, max 295s — `claude -p --json-schema`
+# generates the answer twice, as text and then through the structured-output
+# tool), so the default 1500s would let one hang idle a slot for most of the
+# window, while the previous 300s sat inside that tail and killed several
+# slow-but-healthy calls per run mid-generation or in teardown (the rc=124
+# retries, ~5.5 min each). Those were never hangs.
+#
+# No `wait -n` in bash 3.2 (dagu's interpreter, see GOTCHAS), so the pool is
+# a short poll over the slots: reap what has finished, refill free slots, and
+# stop feeding it the moment the coverage gate below is already lost — what
+# is still in flight is then killed rather than left to burn up to three
+# capped attempts each, which under a full API outage is what would carry the
+# run past the DAG timeout instead of into a clean abort. Each worker's stderr
+# goes to $WORK_DIR/<chunk>.log and is replayed by the parent when the slot is
+# reaped: one contiguous block per chunk (retry lines, then the outcome)
+# rather than interleaved lines, and the parent is the only writer. Failure
+# accounting stays in the parent, keyed on the validated items file — exactly
+# what merge consumes, so the coverage gate and the merge agree by
+# construction and no worker state has to cross the fork.
 extraction_prompt=$(cat "$SCRIPT_DIR/tech-news/extraction-prompt.md")
 extraction_schema=$(cat "$SCRIPT_DIR/tech-news/extraction-schema.json")
-saved_timeout=$CLAUDE_TIMEOUT
-CLAUDE_TIMEOUT=300
-failed_msgs=0
-echo "=== Extracting ==="
-for chunk in "$WORK_DIR"/chunks/chunk-*.json; do
+extract_chunk() {   # one chunk, all attempts; backgrounded by the loop below
+  local chunk="$1" name attempt rc
   name=$(basename "$chunk" .json)
-  ok=0
   for attempt in 1 2 3; do
     run_claude_json "$EXTRACT_MODEL" "$extraction_schema" \
         "$extraction_prompt"$'\n'"$(cat "$chunk")" \
@@ -162,21 +201,79 @@ for chunk in "$WORK_DIR"/chunks/chunk-*.json; do
     rc=$?
     if (( rc != 0 )); then
       echo "$name: transport failure after internal retries (rc=$rc)" >&2
-      break
+      return
     fi
-    if "$PYTHON3" "$PIPELINE" extract-validate --chunk "$chunk" \
+    "$PYTHON3" "$PIPELINE" extract-validate --chunk "$chunk" \
          --envelope "$WORK_DIR/$name.envelope.json" \
-         --output "$WORK_DIR/items/$name.json"; then
-      ok=1; break
-    fi
+         --output "$WORK_DIR/items/$name.json" && return
     echo "$name: invalid response (attempt $attempt/3)" >&2
   done
-  if (( ! ok )); then
-    n=$(jq length "$chunk")
-    echo "$name: failed after 3 attempts — its $n messages count as unextracted" >&2
+}
+reap_slot() {   # replay slot $1's worker log, then account for its outcome
+  local i="$1" name="${names[$1]}" n
+  wait "${pids[i]}"
+  cat "$WORK_DIR/$name.log" >&2
+  if [[ ! -s "$WORK_DIR/items/$name.json" ]]; then
+    n=$(jq length "$WORK_DIR/chunks/$name.json")
+    echo "$name: failed — its $n messages count as unextracted" >&2
     failed_msgs=$((failed_msgs + n))
   fi
+  pids[i]=""
+}
+# Tear down every live worker and reap it. Each worker leads its own process
+# group (set -m below), so everything it forks is in that group — except the
+# claude call: gtimeout puts itself and claude in a group of its OWN (that is
+# how it reaps node's children on expiry), which is why a `dagu stop` on 09-03
+# left one running past the script (GOTCHAS). So: STOP the worker's group — a
+# frozen group cannot fork, so nothing can slip past the enumeration — TERM
+# every child of its members by pid (that reaches the gtimeouts, which
+# forward the TERM to their own group; node has no ignored signals, nothing
+# on the exec path sets any), then KILL the group and reap. Reaping keeps the
+# accounting and the log replay complete for the gate message.
+kill_workers() {
+  local i p kid
+  for ((i = 0; i < EXTRACT_WIDTH; i++)); do
+    [[ -n "${pids[i]:-}" ]] || continue
+    kill -STOP -- "-${pids[i]}" 2>/dev/null
+    for p in $(pgrep -g "${pids[i]}"); do
+      for kid in $(pgrep -P "$p"); do kill -TERM "$kid" 2>/dev/null; done
+    done
+    kill -KILL -- "-${pids[i]}" 2>/dev/null
+  done
+  for ((i = 0; i < EXTRACT_WIDTH; i++)); do
+    [[ -n "${pids[i]:-}" ]] && reap_slot "$i"
+  done
+}
+# From here the lock must outlive the workers: releasing it while calls still
+# ran would let the next run start on top of them. Job control makes each
+# backgrounded worker a process-group leader — the handle kill_workers needs —
+# and keeps a TERM aimed at this script's group (a `dagu stop`) off the
+# workers, so the teardown always runs from here first.
+trap 'kill_workers; rm -rf "$LOCK_DIR"' EXIT
+set -m
+saved_timeout=$CLAUDE_TIMEOUT
+CLAUDE_TIMEOUT=600
+failed_msgs=0
+chunks=("$WORK_DIR"/chunks/chunk-*.json)
+next=0
+echo "=== Extracting ==="
+while :; do
+  (( failed_msgs * 10 > count )) && { kill_workers; break; }   # gate already lost
+  live=0
+  for ((slot = 0; slot < EXTRACT_WIDTH; slot++)); do
+    if [[ -n "${pids[slot]:-}" ]]; then
+      kill -0 "${pids[slot]}" 2>/dev/null && { live=1; continue; }
+      reap_slot "$slot"
+    fi
+    (( next < ${#chunks[@]} && failed_msgs * 10 <= count )) || continue
+    name=$(basename "${chunks[next]}" .json)
+    extract_chunk "${chunks[next]}" 2> "$WORK_DIR/$name.log" &
+    pids[slot]=$!; names[slot]=$name; live=1; next=$((next + 1))
+  done
+  (( live )) || break
+  sleep 5
 done
+set +m
 CLAUDE_TIMEOUT=$saved_timeout
 
 # 4. Coverage gate, script-computed, before any network or ranking work: a
