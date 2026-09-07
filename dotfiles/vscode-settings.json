@@ -49,8 +49,8 @@
   "workbench.colorCustomizations": {
     "diffEditor.insertedLineBackground": "#00000000",
     "diffEditor.removedLineBackground": "#00000000",
-    "diffEditor.insertedTextBackground": "#98c37959",
-    "diffEditor.removedTextBackground": "#e06c7559",
+    "diffEditor.insertedTextBackground": "#98c37973",
+    "diffEditor.removedTextBackground": "#e06c7573",
     "diffEditorGutter.insertedLineBackground": "#98c37980",
     "diffEditorGutter.removedLineBackground": "#e06c7580"
   },
