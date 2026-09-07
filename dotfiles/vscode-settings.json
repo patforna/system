@@ -45,6 +45,15 @@
   // --- Diff Editor ---
   "diffEditor.ignoreTrimWhitespace": true,
   "diffEditor.codeLens": true,
+  // word-level diff only: drop the whole-line band, strengthen the changed span
+  "workbench.colorCustomizations": {
+    "diffEditor.insertedLineBackground": "#00000000",
+    "diffEditor.removedLineBackground": "#00000000",
+    "diffEditor.insertedTextBackground": "#98c37959",
+    "diffEditor.removedTextBackground": "#e06c7559",
+    "diffEditorGutter.insertedLineBackground": "#98c37980",
+    "diffEditorGutter.removedLineBackground": "#e06c7580"
+  },
 
   // --- Git / SCM ---
   "git.openDiffOnClick": true,
