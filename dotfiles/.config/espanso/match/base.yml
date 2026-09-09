@@ -47,6 +47,9 @@ matches:
   - trigger: ":cp"
     replace: "commit and push"
 
+  - trigger: ":gh"
+    replace: "https://github.com/patforna"
+
   - trigger: ":li"
     replace: "https://www.linkedin.com/in/patforna"
 
