@@ -47,6 +47,9 @@ matches:
   - trigger: ":cp"
     replace: "commit and push"
 
+  - trigger: ":li"
+    replace: "https://www.linkedin.com/in/patforna"
+
   - trigger: ":ml"
     replace: 'patric.fornasier@gmail.com'
 
