@@ -19,8 +19,6 @@ Brewfile               # brew packages, casks, VS Code extensions, uv tools, Mac
 
 **Tools:** ripgrep, fd, fzf, eza, bat, delta, lazygit, zoxide, atuin, btop
 
-**Tracking:** ActivityWatch — local, privacy-first automatic time tracking (localhost:5600)
-
 **Automation:** Dagu (executor) + a level-triggered reconciler — drift checks, backups, watchdog, digests
 
 **Editors:** VS Code, neovim for quick edits
