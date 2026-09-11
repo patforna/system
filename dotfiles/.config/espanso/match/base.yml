@@ -56,6 +56,9 @@ matches:
   - trigger: ":ml"
     replace: 'patric.fornasier@gmail.com'
 
+  - trigger: ":nn"
+    replace: "no nitpicking"
+
   - trigger: ":shrg"
     replace: '¯\_(ツ)_/¯'
 
