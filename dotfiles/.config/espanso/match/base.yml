@@ -26,10 +26,10 @@ matches:
   - trigger: ":cfa"
     replace: "Proceed with full-autonomy. Don't stop or ask questions until done."
 
-  - trigger: ":chm"
+  - trigger: ":mch"
     replace: "0796850829"
 
-  - trigger: ":chmi"
+  - trigger: ":mint"
     replace: "+41796850829"
 
   - trigger: ":clip"
