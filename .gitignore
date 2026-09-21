@@ -14,6 +14,7 @@ dagu/docs/
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
 .claude/worktrees/
+dotfiles/.claude/skills/synced/
 
 # Python
 __pycache__/
