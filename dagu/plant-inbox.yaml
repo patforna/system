@@ -1,0 +1,15 @@
+# About hourly — cadence lives in scripts/dagu-jobs.conf; no cron schedule here (see
+# scripts/dagu-reconcile). An idle run is one HTTP call; claude runs only when the garden app
+# (~/github/plant-selection) has something waiting for it.
+
+# Writing up a new plant (research, photos, build, deploy) can take a while, so one attempt gets
+# 50 minutes and there is one retry; 2 × 3000 + 30 s of backoff stays inside the DAG timeout.
+timeout_sec: 7200
+
+env:
+  - CLAUDE_TIMEOUT: "3000"
+  - CLAUDE_MAX_ATTEMPTS: "2"
+
+steps:
+  - name: plant-inbox
+    command: bash -c 'eval "$(/opt/homebrew/bin/brew shellenv)" && "${HOME}/github/system/scripts/plant-inbox.sh"'
