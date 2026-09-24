@@ -121,12 +121,16 @@ drift_count=0
 rows=""
 details=""
 
-while read -r job slo_hours; do
+# An SLO in dagu-jobs.conf is whole hours ("20") or whole minutes ("4m"): as seconds, and as shown.
+slo_secs() { [[ "$1" == *m ]] && echo $(( ${1%m} * 60 )) || echo $(( ${1%h} * 3600 )); }
+slo_label() { [[ "$1" == *m ]] && echo "$1" || echo "${1%h}h"; }
+
+while read -r job slo; do
   [[ -z "$job" || "$job" == \#* ]] && continue
 
   marker_file="${MARKER_DIR}/${job}"
   age=$(age_of "$marker_file")
-  slo_secs=$((slo_hours * 3600))
+  slo_secs=$(slo_secs "$slo")
 
   # The digest cannot report on its own freshness: it reads the success markers BEFORE its
   # own handler_on.success stamps this run, so it would always see itself one run stale and
@@ -164,13 +168,13 @@ while read -r job slo_hours; do
       af=$(autofix_for_run "$(rundir_run_id "$rundir")")
       af_note=""
       [[ -n "$af" ]] && IFS=$'\t' read -r _ af_note <<< "$af"
-      detail_block="  ${job} (last success $(human "$age") ago; slo ${slo_hours}h)"$'\n'
+      detail_block="  ${job} (last success $(human "$age") ago; slo $(slo_label "$slo"))"$'\n'
       [[ -n "$af_note" ]] && detail_block+="    ${af_note}"$'\n'
       while IFS= read -r line; do
         [[ -n "$line" ]] && detail_block+="      ${line}"$'\n'
       done <<< "$(step_output_tail "$rundir" "$job" 8)"
     else
-      detail_block="  ${job} (last success $(human "$age") ago; slo ${slo_hours}h — no failed run on disk)"$'\n'
+      detail_block="  ${job} (last success $(human "$age") ago; slo $(slo_label "$slo") — no failed run on disk)"$'\n'
     fi
   fi
 
@@ -190,9 +194,9 @@ while read -r job slo_hours; do
   fi
 
   if [[ -n "$comment" ]]; then
-    rows+=$(printf '%s  %-22s  %-5s ago (slo %sh)  — %s\n' "$marker" "$job" "$(human "$age")" "$slo_hours" "$comment")
+    rows+=$(printf '%s  %-22s  %-5s ago (slo %s)  — %s\n' "$marker" "$job" "$(human "$age")" "$(slo_label "$slo")" "$comment")
   else
-    rows+=$(printf '%s  %-22s  %-5s ago (slo %sh)\n' "$marker" "$job" "$(human "$age")" "$slo_hours")
+    rows+=$(printf '%s  %-22s  %-5s ago (slo %s)\n' "$marker" "$job" "$(human "$age")" "$(slo_label "$slo")")
   fi
   rows+=$'\n'
   [[ -n "$detail_block" ]] && details+="$detail_block"$'\n'

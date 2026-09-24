@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  Drives scripts/dagu-reconcile every 15 minutes.
+  Drives scripts/dagu-reconcile every 5 minutes (15 until 2026-09-24).
+  A tick with nothing overdue is a DNS probe and a file read, so the shorter tick costs
+  nothing and lets a job's SLO be as short as 5 minutes (see scripts/dagu-jobs.conf).
 
   Why launchd and not a dagu cron entry: launchd does not fire during sleep, and it
   COALESCES missed StartInterval fires into a single run on wake. That is exactly the
@@ -24,9 +26,9 @@
         <string>/Users/patric/github/system/scripts/dagu-reconcile</string>
     </array>
 
-    <!-- 15 min. On wake, missed intervals coalesce into one fire. -->
+    <!-- 5 min. On wake, missed intervals coalesce into one fire. -->
     <key>StartInterval</key>
-    <integer>900</integer>
+    <integer>300</integer>
 
     <!-- Also reconcile once at login/boot, so a cold start doesn't wait a full tick. -->
     <key>RunAtLoad</key>

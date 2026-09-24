@@ -1,4 +1,4 @@
-# About hourly — cadence lives in scripts/dagu-jobs.conf; no cron schedule here (see
+# Every few minutes for now (hourly normally) — cadence lives in scripts/dagu-jobs.conf; no cron schedule here (see
 # scripts/dagu-reconcile). An idle run is one HTTP call; claude runs only when the garden app
 # (~/github/plant-selection) has something waiting for it.
 

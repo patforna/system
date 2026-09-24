@@ -22,12 +22,12 @@ set -uo pipefail
 #     run is "missed" — it's just overdue, and it runs at the next opportunity.
 #     A 3-week holiday needs no special handling: off IS the pause.
 #   - Nothing waits in-process for the network. If we're offline we exit quietly and
-#     the next tick (15 min) retries. A process must never sleep across the
+#     the next tick (5 min) retries. A process must never sleep across the
 #     availability boundary.
 #   - Jobs run SERIALLY, so restic's exclusive repo lock can't be contended and the
 #     old backup stagger is unnecessary.
 #
-# Driven by launchd (StartInterval 900), which does not fire during sleep and
+# Driven by launchd (StartInterval 300), which does not fire during sleep and
 # coalesces missed fires into a single run on wake — a native anacron trigger, and
 # the reason we don't fight pmset/DarkWake.
 
@@ -55,6 +55,9 @@ LOCK_STALE_SECS=$((12 * 3600))
 mkdir -p "$STATE_DIR" "$MARKER_DIR"
 
 log() { printf '%s  %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG_FILE"; }
+
+# An SLO in dagu-jobs.conf is whole hours ("20") or whole minutes ("4m"), as seconds.
+slo_secs() { [[ "$1" == *m ]] && echo $(( ${1%m} * 60 )) || echo $(( ${1%h} * 3600 )); }
 
 # Seconds since a file's mtime; prints a huge number when the file is absent, so a
 # job that has never succeeded always reads as overdue.
@@ -102,12 +105,12 @@ touch "$TICK_FILE"
 # concurrency-1 across every job for free (no dagu queue config needed), which is what
 # makes restic lock contention structurally impossible.
 ran=0
-while read -r job slo_hours; do
+while read -r job slo; do
   [[ -z "$job" || "$job" == \#* ]] && continue
 
   marker="${MARKER_DIR}/${job}"
   age=$(age_secs "$marker")
-  slo_secs=$((slo_hours * 3600))
+  slo_secs=$(slo_secs "$slo")
 
   (( age < slo_secs )) && continue  # fresh enough — nothing to do
 
@@ -128,7 +131,7 @@ while read -r job slo_hours; do
   # A run already in flight must be left alone. `dagu start` on a running DAG
   # SIGTERMs the incumbent and starts over, and an in-flight run has not
   # succeeded, so it stays overdue and the next tick restarts it again: any job
-  # whose runtime exceeds the 15-minute tick can never finish once overdue.
+  # whose runtime exceeds the tick (15 minutes then, 5 now) can never finish once overdue.
   # Observed 2026-08-20 — jobs-digest (~40 min) was restarted five times in an
   # afternoon, each kill also waking an autofix session, so it self-amplified.
   # Skipping is safe: the job keeps its overdue status and the tick after it
