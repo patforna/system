@@ -316,6 +316,7 @@ run_local_checks() {
   check_link "${HOME}/.config/dagu/dags"                                         "${HOME}/github/system/dagu"
   check_link "${HOME}/.config/dagu/base.yaml"                                    "${DOTFILES}/.config/dagu/base.yaml"
   check_link "${HOME}/Library/LaunchAgents/com.patric.dagu-reconcile.plist"      "${DOTFILES}/LaunchAgents/com.patric.dagu-reconcile.plist"
+  check_link "${HOME}/Library/LaunchAgents/com.patric.dagu-reconcile-fast.plist" "${DOTFILES}/LaunchAgents/com.patric.dagu-reconcile-fast.plist"
 
   # Before/after count like every other section — a message-pattern grep missed
   # check_link_or_content's "content differs" / "does not exist" variants.

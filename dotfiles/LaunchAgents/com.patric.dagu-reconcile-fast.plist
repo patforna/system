@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Drives the reconciler's "fast" lane (`scripts/dagu-reconcile fast`) every 5 minutes:
+  the jobs marked `fast` in scripts/dagu-jobs.conf (plant-inbox), in a pass of their own,
+  so they never queue behind the main lane's long jobs. Same trigger semantics as
+  com.patric.dagu-reconcile.plist, which drives the main lane; see that file for why
+  launchd. The lane takes its own lock, so the two agents never block each other.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.patric.dagu-reconcile-fast</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/patric/github/system/scripts/dagu-reconcile</string>
+        <string>fast</string>
+    </array>
+
+    <!-- 5 min. On wake, missed intervals coalesce into one fire. -->
+    <key>StartInterval</key>
+    <integer>300</integer>
+
+    <!-- Also reconcile once at login/boot, so a cold start doesn't wait a full tick. -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- The script resolves its own tools by absolute path, but dagu shells out to
+         restic/uv/gws, which need Homebrew on PATH. launchd's default PATH is minimal. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/Users/patric/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/patric/.local/state/dagu-reconcile/launchd-fast.out</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/patric/.local/state/dagu-reconcile/launchd-fast.err</string>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

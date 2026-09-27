@@ -30,16 +30,27 @@ set -uo pipefail
 # Driven by launchd (StartInterval 300), which does not fire during sleep and
 # coalesces missed fires into a single run on wake — a native anacron trigger, and
 # the reason we don't fight pmset/DarkWake.
+#
+# LANES. A pass is serial, so a job waits behind every long job ahead of it (jobs-digest
+# ~45 min, tad-pipeline up to an hour): observed 2026-09-26, plant-inbox went unchecked for
+# an hour on a 5-minute SLO. A job that must not wait gets its own lane (third column in
+# dagu-jobs.conf) and its own launchd agent, which runs `dagu-reconcile <lane>`; no
+# argument is the main lane. Each lane has its own lock and is serial within itself, but
+# lanes run concurrently — so a lane must never hold a job that contends with another
+# lane's (restic's exclusive repo lock is why every backup stays in the main lane).
 
 REPO="${HOME}/github/system"
 JOBS_CONF="${REPO}/scripts/dagu-jobs.conf"
 DAGU="${DAGU:-/opt/homebrew/bin/dagu}"
+LANE="${1:-main}"
 
 STATE_DIR="${HOME}/.local/state/dagu-reconcile"
 MARKER_DIR="${HOME}/.local/state/dagu-success"
 LOCK_DIR="${STATE_DIR}/lock"
+[[ "$LANE" == main ]] || LOCK_DIR="${LOCK_DIR}-${LANE}"
 TICK_FILE="${STATE_DIR}/last-tick"
 LOG_FILE="${STATE_DIR}/reconcile.log"
+OFFLINE_DIR="${STATE_DIR}/offline"
 
 # Host used purely as a DNS liveness probe. Any always-up host would do; this one is
 # already a hard dependency (restic's B2 backend).
@@ -54,7 +65,11 @@ LOCK_STALE_SECS=$((12 * 3600))
 
 mkdir -p "$STATE_DIR" "$MARKER_DIR"
 
-log() { printf '%s  %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG_FILE"; }
+log() {
+  local tag=""
+  [[ "$LANE" == main ]] || tag="[${LANE}] "
+  printf '%s  %s%s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$tag" "$*" >> "$LOG_FILE"
+}
 
 # An SLO in dagu-jobs.conf is whole hours ("20") or whole minutes ("4m"), as seconds.
 slo_secs() { [[ "$1" == *m ]] && echo $(( ${1%m} * 60 )) || echo $(( ${1%h} * 3600 )); }
@@ -88,13 +103,22 @@ trap 'rm -rf "$LOCK_DIR" 2>/dev/null' EXIT
 # that's left is DNS. If we're not online, exit 0 WITHOUT recording a tick: no tick
 # means "no opportunity", which is what lets the digest tell "the Mac was off/offline"
 # apart from "the job is broken". Never alarm on absence-without-opportunity.
+#
+# Quiet is not silent, though: the log says once when the Mac drops off the network and
+# once when it is back, so a gap in this log explains itself (2026-09-25: a 24h gap with no
+# line at all, reconstructed from other logs). mkdir/rmdir are atomic, so two lanes still
+# write one line each.
 deadline=$(( $(date +%s) + NET_WAIT_SECS ))
 until host -W 2 "$NET_PROBE_HOST" >/dev/null 2>&1; do
   if (( $(date +%s) >= deadline )); then
-    exit 0  # offline: stay quiet, the next tick retries
+    mkdir "$OFFLINE_DIR" 2>/dev/null && log "offline: ${NET_PROBE_HOST} has not resolved for ${NET_WAIT_SECS}s — nothing runs until it does"
+    exit 0  # offline: no tick, no job, no alarm; the next tick retries
   fi
   sleep 5
 done
+if since=$(stat -f '%Sm' -t '%Y-%m-%d %H:%M:%S' "$OFFLINE_DIR" 2>/dev/null) && rmdir "$OFFLINE_DIR" 2>/dev/null; then
+  log "back online (first seen offline ${since})"
+fi
 
 # Online. Record the opportunity BEFORE running anything, so a long job doesn't delay
 # the evidence that the machine was available.
@@ -102,11 +126,12 @@ touch "$TICK_FILE"
 
 # --- Reconcile ---------------------------------------------------------------
 # Serial by design: `dagu start` blocks until the DAG finishes, so this loop gives us
-# concurrency-1 across every job for free (no dagu queue config needed), which is what
-# makes restic lock contention structurally impossible.
+# concurrency-1 across every job in the lane for free (no dagu queue config needed),
+# which is what makes restic lock contention structurally impossible.
 ran=0
-while read -r job slo; do
+while read -r job slo lane; do
   [[ -z "$job" || "$job" == \#* ]] && continue
+  [[ "${lane:-main}" == "$LANE" ]] || continue  # another lane's job
 
   marker="${MARKER_DIR}/${job}"
   age=$(age_secs "$marker")

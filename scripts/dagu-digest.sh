@@ -125,7 +125,7 @@ details=""
 slo_secs() { [[ "$1" == *m ]] && echo $(( ${1%m} * 60 )) || echo $(( ${1%h} * 3600 )); }
 slo_label() { [[ "$1" == *m ]] && echo "$1" || echo "${1%h}h"; }
 
-while read -r job slo; do
+while read -r job slo _; do
   [[ -z "$job" || "$job" == \#* ]] && continue
 
   marker_file="${MARKER_DIR}/${job}"
