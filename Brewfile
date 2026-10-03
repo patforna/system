@@ -60,6 +60,7 @@ npm "svg-term-cli"
 mas "Amphetamine", id: 937984704
 mas "Kindle", id: 302584613
 mas "Pixelmator Pro", id: 1289583905
+cask "1password-cli"
 cask "antigravity-cli"
 cask "calibre"
 cask "claude"
