@@ -115,6 +115,11 @@ autofix_for_run() {
 
 tick_age=$(age_of "$TICK_FILE")
 
+# One reconciler tick (launchd StartInterval 300 in both dagu-reconcile agents). A job runs
+# at the first tick AFTER it falls due, so a healthy job's age peaks at up to SLO + one tick.
+# Without this grace, a 4m-SLO job on the 5-min tick read ATTN for one minute in every five.
+TICK_GRACE_SECS=300
+
 attn_count=0
 idle_count=0
 drift_count=0
@@ -148,7 +153,7 @@ while read -r job slo _; do
   comment=""
   detail_block=""
 
-  if (( age >= 0 && age < slo_secs )); then
+  if (( age >= 0 && age < slo_secs + TICK_GRACE_SECS )); then
     marker="OK   "
   elif (( tick_m > 0 && tick_m < due )); then
     # Stale, but the machine has had NO opportunity since it fell due — it was off or
@@ -226,7 +231,7 @@ ${rows}"
 ${details}"
 
 body+="Markers:
-  OK    fresh — succeeded within its SLO
+  OK    fresh — succeeded within its SLO (+ one 5-min reconcile tick)
   DRIFT untracked system state waiting on a decision (not a failure)
   IDLE  stale, but the Mac was off/offline since it fell due — expected, no action
   ATTN  stale despite the Mac being awake and online — needs you
