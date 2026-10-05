@@ -49,6 +49,7 @@ MARKER_DIR="${HOME}/.local/state/dagu-success"
 LOCK_DIR="${STATE_DIR}/lock"
 [[ "$LANE" == main ]] || LOCK_DIR="${LOCK_DIR}-${LANE}"
 TICK_FILE="${STATE_DIR}/last-tick"
+[[ "$LANE" == main ]] || TICK_FILE="${TICK_FILE}-${LANE}"
 LOG_FILE="${STATE_DIR}/reconcile.log"
 OFFLINE_DIR="${STATE_DIR}/offline"
 
@@ -121,7 +122,9 @@ if since=$(stat -f '%Sm' -t '%Y-%m-%d %H:%M:%S' "$OFFLINE_DIR" 2>/dev/null) && r
 fi
 
 # Online. Record the opportunity BEFORE running anything, so a long job doesn't delay
-# the evidence that the machine was available.
+# the evidence that the machine was available. One tick file per lane: on wake the main
+# lane can tick (and send the digest) before the fast lane has had its turn, and a shared
+# file read as an opportunity the fast lane never had (2026-10-04, false ATTN).
 touch "$TICK_FILE"
 
 # --- Reconcile ---------------------------------------------------------------

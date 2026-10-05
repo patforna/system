@@ -130,7 +130,7 @@ details=""
 slo_secs() { [[ "$1" == *m ]] && echo $(( ${1%m} * 60 )) || echo $(( ${1%h} * 3600 )); }
 slo_label() { [[ "$1" == *m ]] && echo "$1" || echo "${1%h}h"; }
 
-while read -r job slo _; do
+while read -r job slo lane; do
   [[ -z "$job" || "$job" == \#* ]] && continue
 
   marker_file="${MARKER_DIR}/${job}"
@@ -147,7 +147,11 @@ while read -r job slo _; do
 
   marker_m=$(mtime "$marker_file")
   due=$(( marker_m + slo_secs ))   # 0 + slo when the job has never succeeded => long overdue
-  tick_m=$(mtime "$TICK_FILE")
+  # Opportunity is per lane: the job's OWN lane must have ticked since it fell due (the
+  # reconciler keeps one tick file per lane — see dagu-reconcile).
+  tick_file="$TICK_FILE"
+  [[ "${lane:-main}" == main ]] || tick_file="${TICK_FILE}-${lane}"
+  tick_m=$(mtime "$tick_file")
 
   marker="OK   "
   comment=""
@@ -169,6 +173,8 @@ while read -r job slo _; do
     attn_count=$((attn_count + 1))
 
     rundir=$(latest_failed_dagrun_dir "$job")
+    # A failure that a later success superseded is history, not why the job is stale now.
+    [[ -n "$rundir" ]] && (( $(mtime "$rundir") < marker_m )) && rundir=""
     if [[ -n "$rundir" ]]; then
       af=$(autofix_for_run "$(rundir_run_id "$rundir")")
       af_note=""
@@ -179,7 +185,7 @@ while read -r job slo _; do
         [[ -n "$line" ]] && detail_block+="      ${line}"$'\n'
       done <<< "$(step_output_tail "$rundir" "$job" 8)"
     else
-      detail_block="  ${job} (last success $(human "$age") ago; slo $(slo_label "$slo") — no failed run on disk)"$'\n'
+      detail_block="  ${job} (last success $(human "$age") ago; slo $(slo_label "$slo") — no failed run since last success)"$'\n'
     fi
   fi
 
