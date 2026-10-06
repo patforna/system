@@ -26,12 +26,6 @@ matches:
   - trigger: ":cfa"
     replace: "Proceed with full-autonomy. Don't stop or ask questions until done."
 
-  - trigger: ":mch"
-    replace: "0796850829"
-
-  - trigger: ":mint"
-    replace: "+41796850829"
-
   - trigger: ":clip"
     replace: 'Output your response and also copy it into my clipboard'
 
@@ -53,11 +47,20 @@ matches:
   - trigger: ":li"
     replace: "https://www.linkedin.com/in/patforna"
 
+  - trigger: ":mch"
+    replace: "0796850829"
+
+  - trigger: ":mint"
+    replace: "+41796850829"
+
   - trigger: ":ml"
     replace: 'patric.fornasier@gmail.com'
 
   - trigger: ":nn"
     replace: "no nitpicking"
+
+  - trigger: ":pi"
+    replace: "def __init__(self):"
 
   - trigger: ":shrg"
     replace: '¯\_(ツ)_/¯'
