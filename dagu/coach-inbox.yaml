@@ -1,0 +1,16 @@
+# Every few minutes, first in the fast lane — cadence lives in scripts/dagu-jobs.conf; no cron schedule here (see
+# scripts/dagu-reconcile). An idle run is one HTTP call; claude runs only when a rehearsal take on the Story Coach
+# recorder (~/github/story-coach/recorder) waits for its read.
+
+# One read is one run_claude_json call (median ~3 min). 600 s per attempt and one transport retry; at most three
+# takes a run and none started after 1500 s, so a worst case (1500 + 2 gate attempts × (2 × 600 + 30)) stays
+# inside the DAG timeout. A read that misses the quote gate is marked failed on the server and exits 0.
+timeout_sec: 5400
+
+env:
+  - CLAUDE_TIMEOUT: "600"
+  - CLAUDE_MAX_ATTEMPTS: "2"
+
+steps:
+  - name: coach-inbox
+    command: bash -c 'eval "$(/opt/homebrew/bin/brew shellenv)" && "${HOME}/github/system/scripts/coach-inbox.sh"'
