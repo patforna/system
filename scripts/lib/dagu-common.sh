@@ -108,7 +108,7 @@ run_claude() {
 }
 
 # Structured-output sibling of run_claude for script-driven pipelines:
-# run_claude_json <model> <json-schema> <prompt> [tools]. One claude call,
+# run_claude_json <model> <json-schema> <prompt> [tools] [system]. One claude call,
 # schema-enforced output, the claude JSON envelope printed on a CLEAN stdout —
 # callers parse .structured_output from it. stderr is kept separate and
 # replayed after each attempt: merging (2>&1) would corrupt the JSON, so the
@@ -126,11 +126,17 @@ run_claude() {
 # tool runs headless. Structured output composes with tool use — the model runs
 # its tool turns, then emits the schema-bound final answer. --tools stays LAST so
 # the variadic flag consumes only the tool list.
+#
+# The 5th arg, a system prompt, opts into a lean call: it replaces the default
+# system prompt, and MCP servers and user/project settings (so CLAUDE.md) stay
+# out. Measured 7 Oct 2026: ~1,200 tokens of overhead against ~98,000 for a
+# plain call. Default "" keeps the plain call for existing callers.
 run_claude_json() {
-  local model="$1" schema="$2" prompt="$3" tools="${4:-}"
-  local attempt rc out err perm=()
+  local model="$1" schema="$2" prompt="$3" tools="${4:-}" system="${5:-}"
+  local attempt rc out err perm=() lean=()
   [[ -n "$tools" ]] && perm=(--permission-mode bypassPermissions)
-  # perm below MUST use the ${arr[@]+"${arr[@]}"} idiom, not a bare "${perm[@]}":
+  [[ -n "$system" ]] && lean=(--strict-mcp-config --setting-sources local --system-prompt "$system")
+  # perm and lean below MUST use the ${arr[@]+"${arr[@]}"} idiom, not a bare "${perm[@]}":
   # dagu runs these scripts under /bin/bash 3.2.57, where expanding an empty
   # array under `set -u` aborts with "unbound variable" — killing the tool-less
   # default path (all extraction/ranking calls, both digests).
@@ -140,7 +146,7 @@ run_claude_json() {
     : > "$out"; : > "$err"
     _run_with_timeout "$CLAUDE_TIMEOUT" \
       "$CLAUDE" -p "$prompt" --model "$model" \
-      --output-format json --json-schema "$schema" ${perm[@]+"${perm[@]}"} --tools "$tools" \
+      --output-format json --json-schema "$schema" ${perm[@]+"${perm[@]}"} ${lean[@]+"${lean[@]}"} --tools "$tools" \
       < /dev/null > "$out" 2> "$err"
     rc=$?
     cat "$err" >&2

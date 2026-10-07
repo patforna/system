@@ -5,8 +5,14 @@ set -uo pipefail
 # ================
 # Claude's read of each rehearsal take on the Story Coach recorder (~/github/story-coach/recorder). The droplet
 # records and transcribes; this pulls the takes that wait for a read, makes one schema-bound `run_claude_json`
-# call per take (no tools), checks the read with the quote gate (every quote must be in the transcript), and
-# posts it back. The procedure's pieces live in that repo's scripts/inbox.ts; this script only drives them.
+# call per take (no tools), checks the read with the gate (every quote must be in the transcript, and v3's rules
+# besides), and posts it back. The procedure's pieces live in that repo's scripts/inbox.ts; this script only
+# drives them.
+#
+# READ_VERSION picks the read (voice/READ-V3.md in that repo). v2: the prompt, one plain call, the gate. v3 adds
+# a context step (his pace, the previous read of the question) and a pre-pass on a cheap model (where each part of
+# the answer starts; a failed pre-pass only drops the parts table), and makes the read a lean call with its own
+# system prompt.
 #
 # Exit codes are what autofix sees, so they mean transport only:
 #   - a read that misses the gate is retried once with the gate's findings, then the take is marked read-failed
@@ -21,6 +27,8 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/dagu-common.sh"
 
 REPO="${COACH_REPO:-${HOME}/github/story-coach}/recorder"
 MODEL="${COACH_MODEL:-claude-opus-5-5}"
+# v2 until v3 has passed the eval (recorder/scripts/eval-read).
+export READ_VERSION="${READ_VERSION:-v2}"
 # A take's read is ~3 min. At most this many per run, and none started after the budget: the rest wait for the
 # next tick, so plant-inbox behind this job in the fast lane is never held up for long.
 MAX_TAKES="${COACH_MAX_TAKES:-3}"
@@ -31,7 +39,7 @@ inbox() { bun scripts/inbox.ts "$@"; }
 cd "$REPO" || { log "no repo at ${REPO}"; exit 1; }
 
 n=$(inbox pending) || { log "could not read the recorder's inbox"; exit 1; }
-log "${n} take(s) waiting for a read"
+log "${n} take(s) waiting for a read (${READ_VERSION})"
 (( n == 0 )) && exit 0
 
 # One run at a time. A run by hand in progress: do nothing, and don't stamp, so the next tick tries again.
@@ -57,11 +65,13 @@ for id in $ids; do
   fi
   count=$((count + 1))
 
-  prompt_file="var/inbox/${id}.prompt.md"
-  schema_file="var/inbox/${id}.schema.json"
   err_file="var/inbox/${id}.err"
-  for part in prompt schema; do
-    out="$prompt_file"; [[ $part == schema ]] && out="$schema_file"
+  if [[ $READ_VERSION == v3 ]]; then
+    inbox context "$id" || { log "take ${id}: the context step failed"; exit 1; }
+    inbox segment "$id" || log "take ${id}: the pre-pass crashed; reading without the parts table"
+  fi
+  for part in prompt schema system; do
+    out="var/inbox/${id}.${part}.md"; [[ $part == schema ]] && out="var/inbox/${id}.schema.json"
     inbox "$part" "$id" > "$out" 2> "$err_file"
     rc=$?
     if (( rc == 3 )); then
@@ -72,12 +82,13 @@ for id in $ids; do
     (( rc == 0 )) || { log "take ${id}: building the ${part} failed: $(cat "$err_file")"; exit 1; }
   done
 
-  prompt=$(cat "$prompt_file")
-  schema=$(cat "$schema_file")
-  feedback=""
+  prompt=$(cat "var/inbox/${id}.prompt.md")
+  schema=$(cat "var/inbox/${id}.schema.json")
+  # Empty for v2: a plain call. v3's makes it lean.
+  system=$(cat "var/inbox/${id}.system.md")
   passed=0
   for attempt in 1 2; do
-    run_claude_json "$MODEL" "$schema" "${prompt}${feedback}" > "var/inbox/${id}.envelope.json"
+    run_claude_json "$MODEL" "$schema" "$prompt" "" "$system" > "var/inbox/${id}.envelope.json"
     rc=$?
     (( rc == 0 )) || { log "take ${id}: claude transport failure (rc=${rc})"; exit 1; }
     problems=$(inbox check "$id" "var/inbox/${id}.envelope.json")
@@ -86,13 +97,14 @@ for id in $ids; do
     (( rc == 3 )) || { log "take ${id}: the gate could not run (rc=${rc})"; exit 1; }
     log "take ${id}: attempt ${attempt} missed the gate:"
     echo "$problems"
-    feedback=$'\n\n## Your previous read was rejected\n\nIt failed these checks. Answer again, fixing every one; quote word for word.\n\n'"${problems}"
+    # The prompt again, with the findings to fix (inbox.ts check wrote it).
+    prompt=$(cat "var/inbox/${id}.retry.md")
   done
 
   if (( passed )); then
     inbox post "$id" --model "$MODEL" || exit 1
   else
-    inbox fail "$id" "The read missed the quote gate twice. Last findings: ${problems}" || exit 1
+    inbox fail "$id" "The read missed the gate twice. Last findings: ${problems}" || exit 1
   fi
 done
 exit 0
