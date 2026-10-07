@@ -172,9 +172,11 @@ Small web apps shared by link (family, garden people, Patric's own tools) each r
 | `rocks.patforna.com`  | `~/github/felsauswahl`       | `felsauswahl`   |
 | `plants.patforna.com` | `~/github/plant-selection`   | `pflanzauswahl` |
 | `coach.patforna.com`  | `~/github/story-coach`       | `story-coach`   |
+| `[www.]patforna.com`  | `patforna/patforna.com`      | GitHub Pages    |
 
 - **Domain**: registered at Porkbun (Patric's account, auto-renew on). Its nameservers point at DigitalOcean, so the zone is managed with `doctl compute domain records list patforna.com`. Porkbun is only touched for renewals.
 - **Each app's `deploy-do.sh` owns its record.** `DOMAIN=<sub>.patforna.com` at the top of the script; `up` points the A record at the droplet (TTL 300) and writes a Caddy block for the name, which gets its Let's Encrypt certificate on its own; `link` prints `https://<sub>.patforna.com/?key=…`; `down` deletes the record, so a released IP can't serve the name.
+- **The bare domain** forwards to LinkedIn: a GitHub Pages site (repo `patforna/patforna.com`, one `index.html` with a meta refresh). DNS: apex A/AAAA records to GitHub's Pages IPs, `www` a CNAME to `patforna.github.io`.
 - **Adding an app**: copy one of the scripts above, set `NAME`, `APP` and `DOMAIN`, run `up`. No DNS console, no Porkbun. Add a row to the table.
 - **Subdomains, not paths** (`patforna.com/rocks`): apps stay independent (own droplet, own origin, so no shared cookies or localStorage) and need no base-path awareness.
 - **Old addresses**: the Caddyfiles still serve each droplet's bare IP or `<ip>.sslip.io`, because links shared before October 2026 use them. Drop those blocks once nobody does.
