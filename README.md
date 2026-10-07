@@ -167,15 +167,15 @@ Re-pairing (QR rescan) is needed if the phone is offline >14 days, the device is
 
 Small web apps shared by link (family, garden people, Patric's own tools) each run on their own DigitalOcean droplet, Bun behind Caddy, and get a subdomain of `patforna.com`.
 
-| Subdomain             | Repo                         | Droplet         |
-|-----------------------|------------------------------|-----------------|
-| `rocks.patforna.com`  | `~/github/rock-selection`    | `felsauswahl`   |
-| `plants.patforna.com` | `~/github/plant-selection`   | `pflanzauswahl` |
-| `coach.patforna.com`  | `~/github/story-coach`       | `story-coach`   |
-| `[www.]patforna.com`  | `patforna/patforna.com`      | GitHub Pages    |
+| Subdomain             | Repo                         | Droplet           |
+|-----------------------|------------------------------|-------------------|
+| `rocks.patforna.com`  | `~/github/rock-selection`    | `rock-selection`  |
+| `plants.patforna.com` | `~/github/plant-selection`   | `plant-selection` |
+| `coach.patforna.com`  | `~/github/story-coach`       | `story-coach`     |
+| `[www.]patforna.com`  | `patforna/patforna.com`      | GitHub Pages      |
 
 - **Domain**: registered at Porkbun (Patric's account, auto-renew on). Its nameservers point at DigitalOcean, so the zone is managed with `doctl compute domain records list patforna.com`. Porkbun is only touched for renewals.
-- **Porkbun still answers for the domain** to resolvers that cached it before the switch (a "ghost" delegation; Porkbun's nameservers keep naming themselves). So its zone holds a copy of the A records (`rocks`, `plants`, `coach`, apex) and the `www` CNAME, and nothing else. If a droplet's IP changes, update the copy too: Porkbun API, key in `~/.config/porkbun/env`, `POST /api/json/v3/dns/retrieve/patforna.com` to list, then `dns/edit` or `dns/delete`. Delete the copies once nothing has asked Porkbun for a while.
+- **Porkbun's copy is temporary.** Porkbun keeps an authoritative zone for every domain it registers, even one delegated elsewhere, and resolvers that cached the old Porkbun delegation (the `.com` referral lives 48 h) kept asking it after the switch on 7 Oct 2026. So Porkbun's zone holds a copy of the A records (`rocks`, `plants`, `coach`, apex), the `www` CNAME and nothing else, until those caches expire, expected by 9 Oct 2026 ~14:05 UTC. Then check `dig +short TXT ghost-canary.patforna.com @1.1.1.1` (and `@1.0.0.1`, a few times each): `digitalocean` everywhere means delete the Porkbun copies and both canary records. Porkbun API key: `~/.config/porkbun/env`; `POST /api/json/v3/dns/retrieve/patforna.com` lists, `dns/delete/patforna.com/<id>` deletes.
 - **Each app's `deploy-do.sh` owns its record.** `DOMAIN=<sub>.patforna.com` at the top of the script; `up` points the A record at the droplet (TTL 300) and writes a Caddy block for the name, which gets its Let's Encrypt certificate on its own; `link` prints `https://<sub>.patforna.com/?key=…`; `down` deletes the record, so a released IP can't serve the name.
 - **The bare domain** forwards to LinkedIn: a GitHub Pages site (repo `patforna/patforna.com`, one `index.html` with a meta refresh). DNS: apex A/AAAA records to GitHub's Pages IPs, `www` a CNAME to `patforna.github.io`.
 - **Monitoring**: droplets are created with the DigitalOcean metrics agent (`--enable-monitoring`) and the `web-app` tag. Three alert policies on that tag email Patric: memory above 90% for 10 min, disk above 80%, CPU above 90% for 30 min (`doctl monitoring alert list`). Graphs are in the control panel, per droplet.
