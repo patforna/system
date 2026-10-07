@@ -169,7 +169,7 @@ Small web apps shared by link (family, garden people, Patric's own tools) each r
 
 | Subdomain             | Repo                         | Droplet         |
 |-----------------------|------------------------------|-----------------|
-| `rocks.patforna.com`  | `~/github/felsauswahl`       | `felsauswahl`   |
+| `rocks.patforna.com`  | `~/github/rock-selection`    | `felsauswahl`   |
 | `plants.patforna.com` | `~/github/plant-selection`   | `pflanzauswahl` |
 | `coach.patforna.com`  | `~/github/story-coach`       | `story-coach`   |
 | `[www.]patforna.com`  | `patforna/patforna.com`      | GitHub Pages    |
