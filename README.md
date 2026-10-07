@@ -163,6 +163,24 @@ Two standing caveats: linking a personal number via the reverse-engineered proto
 
 Re-pairing (QR rescan) is needed if the phone is offline >14 days, the device is unlinked, or WhatsApp revokes the session. The bridge only prints its **first** QR and each code is valid ~60s, so on a stale code restart the bridge rather than waiting out its 5-minute retry.
 
+## Web apps (patforna.com)
+
+Small web apps shared by link (family, garden people, Patric's own tools) each run on their own DigitalOcean droplet, Bun behind Caddy, and get a subdomain of `patforna.com`.
+
+| Subdomain             | Repo                         | Droplet         |
+|-----------------------|------------------------------|-----------------|
+| `rocks.patforna.com`  | `~/github/felsauswahl`       | `felsauswahl`   |
+| `plants.patforna.com` | `~/github/plant-selection`   | `pflanzauswahl` |
+| `coach.patforna.com`  | `~/github/story-coach`       | `story-coach`   |
+
+- **Domain**: registered at Porkbun (Patric's account, auto-renew on). Its nameservers point at DigitalOcean, so the zone is managed with `doctl compute domain records list patforna.com`. Porkbun is only touched for renewals.
+- **Each app's `deploy-do.sh` owns its record.** `DOMAIN=<sub>.patforna.com` at the top of the script; `up` points the A record at the droplet (TTL 300) and writes a Caddy block for the name, which gets its Let's Encrypt certificate on its own; `link` prints `https://<sub>.patforna.com/?key=…`; `down` deletes the record, so a released IP can't serve the name.
+- **Adding an app**: copy one of the scripts above, set `NAME`, `APP` and `DOMAIN`, run `up`. No DNS console, no Porkbun. Add a row to the table.
+- **Subdomains, not paths** (`patforna.com/rocks`): apps stay independent (own droplet, own origin, so no shared cookies or localStorage) and need no base-path awareness.
+- **Old addresses**: the Caddyfiles still serve each droplet's bare IP or `<ip>.sslip.io`, because links shared before October 2026 use them. Drop those blocks once nobody does.
+- **The key cookie is per hostname**: a device that used the old address needs the new link (with `?key=`) once.
+- **Corporate web filters** (e.g. Fortinet) can block newly registered domains for about 30 days, and block sslip.io outright. The bare IP gets through.
+
 ## Remote box
 
 See [`remote/README.md`](remote/README.md) for the full playbook.
