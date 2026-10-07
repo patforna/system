@@ -91,7 +91,9 @@ for id in $ids; do
     run_claude_json "$MODEL" "$schema" "$prompt" "" "$system" > "var/inbox/${id}.envelope.json"
     rc=$?
     (( rc == 0 )) || { log "take ${id}: claude transport failure (rc=${rc})"; exit 1; }
-    problems=$(inbox check "$id" "var/inbox/${id}.envelope.json")
+    # The last attempt keeps a v3 read with faults of form, as warnings, rather than lose it.
+    final=""; (( attempt == 2 )) && final="--final"
+    problems=$(inbox check "$id" "var/inbox/${id}.envelope.json" $final)
     rc=$?
     if (( rc == 0 )); then passed=1; break; fi
     (( rc == 3 )) || { log "take ${id}: the gate could not run (rc=${rc})"; exit 1; }
