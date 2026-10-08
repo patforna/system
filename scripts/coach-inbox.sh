@@ -27,8 +27,8 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/dagu-common.sh"
 
 REPO="${COACH_REPO:-${HOME}/github/story-coach}/recorder"
 MODEL="${COACH_MODEL:-claude-opus-5-5}"
-# v3 since it passed the eval (recorder/scripts/eval-read, voice/read-v3/eval-log.md); READ_VERSION=v2 for the old read.
-export READ_VERSION="${READ_VERSION:-v3}"
+# v4 since it passed the eval and the fresh-eyes review (voice/READ-V4.md); READ_VERSION=v3 or v2 for the older reads.
+export READ_VERSION="${READ_VERSION:-v4}"
 # A take's read is ~3 min. At most this many per run, and none started after the budget: the rest wait for the
 # next tick, so plant-inbox behind this job in the fast lane is never held up for long.
 MAX_TAKES="${COACH_MAX_TAKES:-3}"
@@ -56,8 +56,8 @@ fi
 trap 'rm -rf "$lock"' EXIT
 
 ids=$(inbox pull) || { log "pull failed"; exit 1; }
-# v3: his Core Stories from Notion, at most once an hour; without them the reads flag no omission.
-[[ $READ_VERSION == v3 ]] && { inbox core-stories || log "fetching the Core Stories crashed; reading with the copy there is"; }
+# v3 and v4: his Core Stories from Notion, at most once an hour; v3 reads without them flag no omission.
+[[ $READ_VERSION != v2 ]] && { inbox core-stories || log "fetching the Core Stories crashed; reading with the copy there is"; }
 start=$(date +%s)
 count=0
 for id in $ids; do
@@ -68,8 +68,10 @@ for id in $ids; do
   count=$((count + 1))
 
   err_file="var/inbox/${id}.err"
-  if [[ $READ_VERSION == v3 ]]; then
+  if [[ $READ_VERSION != v2 ]]; then
     inbox context "$id" || { log "take ${id}: the context step failed"; exit 1; }
+  fi
+  if [[ $READ_VERSION == v3 ]]; then
     inbox segment "$id" || log "take ${id}: the pre-pass crashed; reading without the parts table"
   fi
   for part in prompt schema system; do
