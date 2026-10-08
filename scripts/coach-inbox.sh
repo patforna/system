@@ -10,9 +10,9 @@ set -uo pipefail
 # drives them.
 #
 # READ_VERSION picks the read (voice/READ-V3.md in that repo). v2: the prompt, one plain call, the gate. v3 adds
-# a context step (his pace, the previous read of the question) and a pre-pass on a cheap model (where each part of
-# the answer starts; a failed pre-pass only drops the parts table), and makes the read a lean call with its own
-# system prompt.
+# his Core Stories from Notion (cached an hour), a context step (his pace, the previous read of the question) and
+# a pre-pass on a cheap model (where each part of the answer starts; a failed pre-pass only drops the parts
+# table), and makes the read a lean call with its own system prompt.
 #
 # Exit codes are what autofix sees, so they mean transport only:
 #   - a read that misses the gate is retried once with the gate's findings, then the take is marked read-failed
@@ -56,6 +56,8 @@ fi
 trap 'rm -rf "$lock"' EXIT
 
 ids=$(inbox pull) || { log "pull failed"; exit 1; }
+# v3: his Core Stories from Notion, at most once an hour; without them the reads flag no omission.
+[[ $READ_VERSION == v3 ]] && { inbox core-stories || log "fetching the Core Stories crashed; reading with the copy there is"; }
 start=$(date +%s)
 count=0
 for id in $ids; do
