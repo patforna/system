@@ -27,8 +27,8 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/dagu-common.sh"
 
 REPO="${COACH_REPO:-${HOME}/github/story-coach}/recorder"
 MODEL="${COACH_MODEL:-claude-opus-5-5}"
-# v2 until v3 has passed the eval (recorder/scripts/eval-read).
-export READ_VERSION="${READ_VERSION:-v2}"
+# v3 since it passed the eval (recorder/scripts/eval-read, voice/read-v3/eval-log.md); READ_VERSION=v2 for the old read.
+export READ_VERSION="${READ_VERSION:-v3}"
 # A take's read is ~3 min. At most this many per run, and none started after the budget: the rest wait for the
 # next tick, so plant-inbox behind this job in the fast lane is never held up for long.
 MAX_TAKES="${COACH_MAX_TAKES:-3}"
