@@ -19,7 +19,7 @@ log() { echo "[plant-inbox] $*"; }
 cd "$REPO" || { log "no repo at ${REPO}"; exit 1; }
 
 # doctl failing is a real failure; an empty list just means there is no app to serve.
-ip=$(doctl compute droplet list pflanzauswahl --format PublicIPv4 --no-header) || { log "doctl failed"; exit 1; }
+ip=$(doctl compute droplet list plant-selection --format PublicIPv4 --no-header) || { log "doctl failed"; exit 1; }
 [[ -z "$ip" ]] && { log "no droplet: nothing to do"; exit 0; }
 
 n=$(bun scripts/inbox.ts pending) || { log "could not read the app's state"; exit 1; }
