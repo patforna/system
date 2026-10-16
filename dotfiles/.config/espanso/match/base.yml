@@ -41,6 +41,9 @@ matches:
   - trigger: ":cp"
     replace: "commit and push"
 
+  - trigger: ":dm"
+    replace: "~/delete-me"
+
   - trigger: ":gh"
     replace: "https://github.com/patforna"
 
