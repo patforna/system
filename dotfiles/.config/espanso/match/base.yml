@@ -42,7 +42,7 @@ matches:
     replace: "commit and push"
 
   - trigger: ":dm"
-    replace: "~/delete-me"
+    replace: "~/delete-me/"
 
   - trigger: ":gh"
     replace: "https://github.com/patforna"
