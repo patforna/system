@@ -103,7 +103,7 @@ Local [Dagu](https://dagu.cloud/) instance runs the jobs in [`dagu/`](dagu/) —
 |-------------------------|---------------------|-------------------------------------------------------------------------------------------------------|
 | `msgvault-sync`         | 20h                 | `msgvault sync` of the personal Gmail account                                                         |
 | `plant-inbox`           | 4m (1h normally)    | Fast lane. [`plant-inbox.sh`](scripts/plant-inbox.sh) — if the garden app ([`plant-selection`](../plant-selection)) has anything waiting for Claude, runs its `inbox` skill headless (answers questions, writes up plant ideas, deploys); otherwise one HTTP call and done |
-| `tad-pipeline`          | 20h                 | `uv run tad pipeline run -v` in the TAD repo (loaders resume from last date, so gaps backfill)        |
+| `tad-pipeline`          | 20h (paused)        | `uv run tad pipeline run -v` in the TAD repo (loaders resume from last date, so gaps backfill). Paused since 2026-10-29: Massive subscription cancelled, line commented out in `dagu-jobs.conf` |
 | `tad-backup-data`       | 20h                 | restic → B2 backup of `~/github/tad/data`; runs right after the pipeline, so it captures fresh output |
 | `tad-backup-edgar`      | ~6.5d               | restic → B2 backup of `~/.cache/tad/edgar` (~28GB); serial-adjacent to the data backup (shared repo lock) |
 | `drift-check`           | ~6.5d               | [`scripts/drift-check`](scripts/drift-check) `--local --notify` — emails local drift, exits 0 (no autofix). Remote parity is gated in `dev-up`, not here. |

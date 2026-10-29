@@ -2,6 +2,9 @@
 # scripts/dagu-reconcile). It no longer pins a weekday: the loaders resume from the last
 # persisted date, so a run on a non-trading day simply finds no new bars, and a run after
 # a multi-day gap backfills it. Cadence, not calendar. See private/GOTCHAS.md.
+#
+# PAUSED since 2026-10-29 (Massive subscription cancelled): commented out in
+# scripts/dagu-jobs.conf, so nothing starts it. Still runnable by hand.
 
 steps:
   - name: tad-pipeline
