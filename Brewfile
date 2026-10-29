@@ -59,6 +59,7 @@ npm "@google/clasp"
 npm "svg-term-cli"
 mas "Amphetamine", id: 937984704
 mas "Kindle", id: 302584613
+mas "Mini Stopwatch", id: 6739762059
 mas "Pixelmator Pro", id: 1289583905
 cask "1password-cli"
 cask "antigravity-cli"
