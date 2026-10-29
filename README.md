@@ -136,7 +136,8 @@ Daily digest `<status>` is `all ok`, optionally with a suffix like `(2 idle by d
 - **OK** — succeeded within its SLO.
 - **DRIFT** — untracked system state waiting on a decision (not a failure).
 - **IDLE** — stale, but the Mac was off/offline since the job fell due — expected, no action. This is what keeps a holiday quiet: absence-without-opportunity never alarms.
-- **ATTN** — stale *despite* the Mac being awake and online — the only marker that needs you.
+- **ATTN** — stale *despite* the Mac being awake and online — the only job marker that needs you.
+- **DEPS** — a TAD Dependabot PR is red or has been open more than 7 days; counts towards `N need attention`.
 
 ### Autofix
 

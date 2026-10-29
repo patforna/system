@@ -34,6 +34,7 @@ CONF="${HOME}/github/system/private/droplet-watchdog.conf"
 NOTIFY_EMAIL="${NOTIFY_EMAIL:-}"
 [[ -z "$NOTIFY_EMAIL" ]] && exit 0
 
+GH="${GH:-/opt/homebrew/bin/gh}"
 SYSTEM_REPO="${HOME}/github/system"
 JOBS_CONF="${SYSTEM_REPO}/scripts/dagu-jobs.conf"
 SELF="workflow-digest"   # this digest's own DAG — it can't report on its own freshness (see loop)
@@ -213,6 +214,30 @@ while read -r job slo lane; do
   [[ -n "$detail_block" ]] && details+="$detail_block"$'\n'
 done < "$JOBS_CONF"
 
+# TAD Dependabot. Auto-merge only lands green non-major updates, so a red group PR or a
+# major left for manual review otherwise sits unseen while Dependabot quietly supersedes
+# it week after week. Not a job, but it needs a human, so it counts towards ATTN.
+DEPENDABOT_REPO="patforna/tad"
+DEPENDABOT_STALE_DAYS=7
+if deps_json=$("$GH" pr list --repo "$DEPENDABOT_REPO" --author app/dependabot --state open \
+     --json number,title,createdAt,url,statusCheckRollup 2>/dev/null); then
+  stuck=$(jq -r --argjson stale "$DEPENDABOT_STALE_DAYS" '
+    .[]
+    | (((now - (.createdAt | fromdateiso8601)) / 86400) | floor) as $age
+    | ([.statusCheckRollup[]? | (.conclusion // .state)]
+       | any(. == "FAILURE" or . == "ERROR" or . == "TIMED_OUT")) as $red
+    | select($red or $age >= $stale)
+    | "    #\(.number) \(if $red then "red" else "unmerged" end), \($age)d old  \(.title)\n      \(.url)"' <<< "$deps_json")
+  if [[ -n "$stuck" ]]; then
+    n_stuck=$(grep -c '^    #' <<< "$stuck")
+    rows+=$(printf '%s  %-22s  %s open PR(s) red or older than %sd\n' "DEPS " "tad-dependabot" "$n_stuck" "$DEPENDABOT_STALE_DAYS")$'\n'
+    details+="  tad-dependabot (merge, fix or close - majors are never auto-merged)"$'\n'"${stuck}"$'\n\n'
+    attn_count=$((attn_count + 1))
+  fi
+else
+  rows+=$(printf '%s  %-22s  could not list PRs - check gh auth\n' "DEPS " "tad-dependabot")$'\n'
+fi
+
 if (( attn_count > 0 )); then
   subject="[DAGU] Daily digest — ${attn_count} need attention"
 else
@@ -241,6 +266,7 @@ body+="Markers:
   DRIFT untracked system state waiting on a decision (not a failure)
   IDLE  stale, but the Mac was off/offline since it fell due — expected, no action
   ATTN  stale despite the Mac being awake and online — needs you
+  DEPS  a TAD Dependabot PR is red or open longer than ${DEPENDABOT_STALE_DAYS}d — needs you
 
 Jobs have no cron schedule; they run whenever the Mac is awake and online and they are
 overdue (scripts/dagu-reconcile). Being away is not a failure.
