@@ -216,11 +216,18 @@ done < "$JOBS_CONF"
 
 # TAD Dependabot. Auto-merge only lands green non-major updates, so a red group PR or a
 # major left for manual review otherwise sits unseen while Dependabot quietly supersedes
-# it week after week. Not a job, but it needs a human, so it counts towards ATTN.
+# it week after week. Freshness is the last merged Dependabot PR: it catches every stall
+# (red PRs, failed Dependabot jobs, broken auto-merge, bad config) in one signal. Not a
+# job, but a stall needs a human, so it counts towards ATTN.
 DEPENDABOT_REPO="patforna/tad"
 DEPENDABOT_STALE_DAYS=7
+DEPENDABOT_MERGE_SLO_DAYS=21
 if deps_json=$("$GH" pr list --repo "$DEPENDABOT_REPO" --author app/dependabot --state open \
-     --json number,title,createdAt,url,statusCheckRollup 2>/dev/null); then
+     --json number,title,createdAt,url,statusCheckRollup 2>/dev/null) \
+   && merge_age=$("$GH" pr list --repo "$DEPENDABOT_REPO" --author app/dependabot --state merged \
+     --limit 20 --json mergedAt \
+     --jq 'if length == 0 then -1 else ((now - (map(.mergedAt | fromdateiso8601) | max)) / 86400 | floor) end' \
+     2>/dev/null); then
   stuck=$(jq -r --argjson stale "$DEPENDABOT_STALE_DAYS" '
     .[]
     | (((now - (.createdAt | fromdateiso8601)) / 86400) | floor) as $age
@@ -228,11 +235,20 @@ if deps_json=$("$GH" pr list --repo "$DEPENDABOT_REPO" --author app/dependabot -
        | any(. == "FAILURE" or . == "ERROR" or . == "TIMED_OUT")) as $red
     | select($red or $age >= $stale)
     | "    #\(.number) \(if $red then "red" else "unmerged" end), \($age)d old  \(.title)\n      \(.url)"' <<< "$deps_json")
+  issues=()
   if [[ -n "$stuck" ]]; then
-    n_stuck=$(grep -c '^    #' <<< "$stuck")
-    rows+=$(printf '%s  %-22s  %s open PR(s) red or older than %sd\n' "DEPS " "tad-dependabot" "$n_stuck" "$DEPENDABOT_STALE_DAYS")$'\n'
+    issues+=("$(grep -c '^    #' <<< "$stuck") open PR(s) red or older than ${DEPENDABOT_STALE_DAYS}d")
     details+="  tad-dependabot (merge, fix or close - majors are never auto-merged)"$'\n'"${stuck}"$'\n\n'
+  fi
+  (( merge_age < 0 || merge_age >= DEPENDABOT_MERGE_SLO_DAYS )) && issues+=("nothing merged in ${DEPENDABOT_MERGE_SLO_DAYS}d")
+  age_label="${merge_age}d"
+  (( merge_age < 0 )) && age_label="never"
+  if (( ${#issues[@]} > 0 )); then
+    comment=$(printf '%s; ' "${issues[@]}"); comment="${comment%; }"
+    rows+=$(printf '%s  %-22s  %-5s ago (slo %sd)  — %s\n' "DEPS " "tad-dependabot" "$age_label" "$DEPENDABOT_MERGE_SLO_DAYS" "$comment")$'\n'
     attn_count=$((attn_count + 1))
+  else
+    rows+=$(printf '%s  %-22s  %-5s ago (slo %sd)\n' "OK   " "tad-dependabot" "$age_label" "$DEPENDABOT_MERGE_SLO_DAYS")$'\n'
   fi
 else
   rows+=$(printf '%s  %-22s  could not list PRs - check gh auth\n' "DEPS " "tad-dependabot")$'\n'
@@ -266,7 +282,7 @@ body+="Markers:
   DRIFT untracked system state waiting on a decision (not a failure)
   IDLE  stale, but the Mac was off/offline since it fell due — expected, no action
   ATTN  stale despite the Mac being awake and online — needs you
-  DEPS  a TAD Dependabot PR is red or open longer than ${DEPENDABOT_STALE_DAYS}d — needs you
+  DEPS  a TAD Dependabot PR is red or open > ${DEPENDABOT_STALE_DAYS}d, or none merged in ${DEPENDABOT_MERGE_SLO_DAYS}d — needs you
 
 Jobs have no cron schedule; they run whenever the Mac is awake and online and they are
 overdue (scripts/dagu-reconcile). Being away is not a failure.
