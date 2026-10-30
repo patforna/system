@@ -163,6 +163,16 @@ Two standing caveats: linking a personal number via the reverse-engineered proto
 
 Re-pairing (QR rescan) is needed if the phone is offline >14 days, the device is unlinked, or WhatsApp revokes the session. The bridge only prints its **first** QR and each code is valid ~60s, so on a stale code restart the bridge rather than waiting out its 5-minute retry.
 
+## Chrome DevTools (MCP)
+
+Browser automation must never pop up a window, steal focus or play sound. The `chrome-devtools-mcp@chrome-devtools-plugins` plugin launches a visible Chrome and its pinned 1.1.1 takes no config file or env vars, so the plugin is disabled (`enabledPlugins` → `false` in `~/.claude/settings.json`) and the server is registered in user scope instead:
+
+```sh
+claude mcp add -s user chrome-devtools -- npx -y chrome-devtools-mcp@1.1.1 --headless --isolated --chromeArg=--mute-audio
+```
+
+Tools are therefore `mcp__chrome-devtools__*` (not `mcp__plugin_chrome-devtools-mcp_…`), and the plugin's skills are off. Like the WhatsApp deny rules this is local-only state in `~/.claude.json` / `~/.claude/settings.json`: re-add by hand after any `~/.claude` reset. Some bot-protected sites (Galaxus, Rtings) may block headless Chrome.
+
 ## Web apps (patforna.com)
 
 Small web apps shared by link (family, garden people, Patric's own tools) each run on their own DigitalOcean droplet, Bun behind Caddy, and get a subdomain of `patforna.com`.
