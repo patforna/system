@@ -181,6 +181,7 @@ Small web apps shared by link (family, garden people, Patric's own tools) each r
 |-----------------------|------------------------------|-------------------|
 | `rocks.patforna.com`  | `~/github/rock-selection`    | `rock-selection`  |
 | `plants.patforna.com` | `~/github/plant-selection`   | `plant-selection` |
+| `flash.patforna.com`  | `~/github/flash`             | `flash`           |
 | `[www.]patforna.com`  | `patforna/patforna.com`      | GitHub Pages      |
 
 - **Domain**: registered at Porkbun (Patric's account, auto-renew on). Its nameservers point at DigitalOcean, so the zone is managed with `doctl compute domain records list patforna.com`. Porkbun is only touched for renewals.
