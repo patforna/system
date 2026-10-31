@@ -193,6 +193,7 @@ Small web apps shared by link (family, garden people, Patric's own tools) each r
 - **Old addresses**: the Caddyfiles still serve each droplet's bare IP or `<ip>.sslip.io`, because links shared before October 2026 use them. Drop those blocks once nobody does.
 - **The key cookie is per hostname**: a device that used the old address needs the new link (with `?key=`) once.
 - **Corporate web filters** (e.g. Fortinet) can block newly registered domains for about 30 days, and block sslip.io outright. The bare IP gets through.
+- **A new subdomain looked up too early stays missing for 30 minutes**: a lookup made before DigitalOcean's nameservers have the new A record is cached as "no such name" for the zone's negative TTL (the SOA's last field, 1800 s), by the laptop and the home router alike. A deploy script's health check from the laptop should pin the name to the droplet (`curl --resolve <sub>.patforna.com:443:<ip>`) rather than wait for DNS; `dig @ns1.digitalocean.com` shows what the world will see (flash's first deploy, 31 Oct 2026).
 
 ## Remote box
 
