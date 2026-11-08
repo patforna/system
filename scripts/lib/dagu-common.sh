@@ -151,8 +151,17 @@ run_claude_json() {
     rc=$?
     cat "$err" >&2
     if (( rc == 0 )); then cat "$out"; rm -f "$out" "$err"; return 0; fi
+    # An rc!=0 with EMPTY stdout is a transport/startup blip: the call
+    # transported no envelope at all (claude died before emitting, exits 1 with
+    # no API-error string — seen 11-08, three extraction chunks, 0-byte
+    # envelopes, only "SessionEnd hook ... Hook cancelled" teardown noise on
+    # stderr). It matched neither 124/137 nor the marker grep, so it was failed
+    # outright with no retry, sinking the tech-news digest via its coverage
+    # gate. We only reach here when rc!=0, so an empty $out cannot be a valid
+    # result — retry it. (A schema/refusal miss exits 0 with a NON-empty
+    # envelope whose structured_output is null, so this never masks one.)
     if (( attempt < CLAUDE_MAX_ATTEMPTS )) \
-       && { (( rc == 124 || rc == 137 )) \
+       && { (( rc == 124 || rc == 137 )) || [[ ! -s "$out" ]] \
             || grep -qiE 'API Error|connection closed|connection reset|socket connection|overloaded|rate.?limit|read timed out|request timed out' "$err" "$out"; }; then
       echo "[run_claude_json] transient failure (attempt ${attempt}/${CLAUDE_MAX_ATTEMPTS}, rc=${rc}); retrying after $((attempt * 30))s backoff." >&2
       sleep $((attempt * 30))
