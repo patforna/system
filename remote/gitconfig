@@ -18,7 +18,7 @@
 	conflictStyle = zdiff3
 
 [core]
-	editor = nvim
+	editor = vim
 	autocrlf = false
 	pager = delta
 

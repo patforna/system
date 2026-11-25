@@ -24,7 +24,7 @@ The `dev-up` and `dev-down` scripts for managing the droplet lifecycle live in `
 
 | Method | Tools |
 |---|---|
-| apt | zsh, tmux, neovim, git, ripgrep, bat, fd, btop, jq, curl, unzip, build-essential, zsh-autosuggestions, zsh-syntax-highlighting, shellcheck, figlet, git-crypt |
+| apt | zsh, tmux, vim, git, ripgrep, bat, fd, btop, jq, curl, unzip, build-essential, zsh-autosuggestions, zsh-syntax-highlighting, shellcheck, figlet, git-crypt |
 | nodesource apt | Node.js 22 (Claude Code plugins) |
 | GitHub apt repo | gh |
 | GitHub releases | actionlint, fzf, delta, lazygit, eza, stylua |

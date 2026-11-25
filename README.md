@@ -46,7 +46,6 @@ Installs Homebrew, all packages from the Brewfile (formulae, casks, VS Code exte
 | SSH            | [`.ssh-config`](dotfiles/.ssh-config) (uses `Include` for machine-local IP) |
 | Terminal       | [`.config/ghostty/config`](dotfiles/.config/ghostty/config) |
 | Text expander  | [`.config/espanso/`](dotfiles/.config/espanso/) |
-| Neovim         | [`.config/nvim/init.lua`](dotfiles/.config/nvim/init.lua), [`lazy-lock.json`](dotfiles/.config/nvim/lazy-lock.json) |
 | Editors        | [`vscode-settings.json`](dotfiles/vscode-settings.json), [`vscode-keybindings.json`](dotfiles/vscode-keybindings.json) |
 | Prompt         | [`.config/starship.toml`](dotfiles/.config/starship.toml) |
 | History        | [`.config/atuin/config.toml`](dotfiles/.config/atuin/config.toml) |

@@ -4,7 +4,7 @@ set -euo pipefail
 BASE_YML="$HOME/github/system/dotfiles/.config/espanso/match/base.yml"
 
 if [[ "${1:-}" == --o* || "${1:-}" == -o ]]; then
-  ${EDITOR:-nvim} "$BASE_YML"
+  ${EDITOR:-vim} "$BASE_YML"
   exit 0
 fi
 

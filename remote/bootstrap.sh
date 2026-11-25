@@ -51,7 +51,7 @@ gh_install() {
 echo "--- apt packages ---"
 sudo apt-get update -qq
 sudo apt-get install -y -qq \
-  zsh tmux neovim git ripgrep bat fd-find btop jq curl unzip build-essential \
+  zsh tmux vim git ripgrep bat fd-find btop jq curl unzip build-essential \
   zsh-autosuggestions zsh-syntax-highlighting shellcheck figlet git-crypt
 
 # Ubuntu ships bat as "batcat" and fd as "fdfind" — create symlinks
@@ -266,8 +266,6 @@ link "$REPO_DIR/remote/gitconfig"  "$HOME/.gitconfig"
 # Shared configs (identical on Mac + Linux)
 link "$REPO_DIR/dotfiles/.config/starship.toml"       "$HOME/.config/starship.toml"
 link "$REPO_DIR/dotfiles/.config/atuin/config.toml"   "$HOME/.config/atuin/config.toml"
-link "$REPO_DIR/dotfiles/.config/nvim/init.lua"       "$HOME/.config/nvim/init.lua"
-link "$REPO_DIR/dotfiles/.config/nvim/lazy-lock.json" "$HOME/.config/nvim/lazy-lock.json"
 link "$REPO_DIR/dotfiles/.config/btop/btop.conf"      "$HOME/.config/btop/btop.conf"
 link "$REPO_DIR/dotfiles/.config/gh/config.yml"       "$HOME/.config/gh/config.yml"
 link "$REPO_DIR/dotfiles/.config/lazygit/config.yml"  "$HOME/.config/lazygit/config.yml"

@@ -293,7 +293,6 @@ run_local_checks() {
   check_link "${HOME}/.gitconfig"                                                "${DOTFILES}/.gitconfig"
   check_link "${HOME}/.ssh/config"                                               "${DOTFILES}/.ssh-config"
   check_link "${HOME}/.config/ghostty/config"                                    "${DOTFILES}/.config/ghostty/config"
-  check_link "${HOME}/.config/nvim"                                              "${DOTFILES}/.config/nvim"
   check_link "${HOME}/.config/espanso"                                           "${DOTFILES}/.config/espanso"
   check_link "${HOME}/.config/starship.toml"                                     "${DOTFILES}/.config/starship.toml"
   check_link "${HOME}/.config/atuin/config.toml"                                 "${DOTFILES}/.config/atuin/config.toml"
@@ -598,7 +597,7 @@ run_remote_checks() {
   git_drift_count=${#DRIFT[@]}
 
   # Strip comments, blank lines, credential sections, and signing block
-  git_filter='^\s*$|^#|^\[credential|helper|gpgsign|gpg|editor'
+  git_filter='^\s*$|^#|^\[credential|helper|gpgsign|gpg'
   mac_git=$(grep -vE "$git_filter" "${DOTFILES}/.gitconfig" | strip_comments | sort)
   remote_git=$(grep -vE "$git_filter" "${REMOTE}/gitconfig" | strip_comments | sort)
 
@@ -624,7 +623,6 @@ run_remote_checks() {
   shared_files=(
     "dotfiles/.config/starship.toml"
     "dotfiles/.config/atuin/config.toml"
-    "dotfiles/.config/nvim/init.lua"
     "dotfiles/.config/btop/btop.conf"
   )
   for f in "${shared_files[@]}"; do

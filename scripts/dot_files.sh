@@ -67,7 +67,6 @@ echo ""
 # --- XDG Config ---
 echo "--- XDG Config ---"
 link "${PUBLIC}/.config/ghostty/config"            "${HOME}/.config/ghostty/config"
-link "${PUBLIC}/.config/nvim"                      "${HOME}/.config/nvim"
 link "${PUBLIC}/.config/starship.toml"             "${HOME}/.config/starship.toml"
 link "${PUBLIC}/.config/atuin/config.toml"         "${HOME}/.config/atuin/config.toml"
 link "${PUBLIC}/.config/btop/btop.conf"            "${HOME}/.config/btop/btop.conf"
