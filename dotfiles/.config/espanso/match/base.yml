@@ -47,6 +47,9 @@ matches:
   - trigger: ":gh"
     replace: "https://github.com/patforna"
 
+  - trigger: ":lbo"
+    replace: "(load-bearing only)"
+
   - trigger: ":li"
     replace: "https://www.linkedin.com/in/patforna"
 
