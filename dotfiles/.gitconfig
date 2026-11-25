@@ -20,7 +20,7 @@
 
 # --- Editor & ignore ---
 [core]
-	editor = nvim
+	editor = vim
 	autocrlf = false
 	pager = delta         # catch-all diff pager: diff, show, log, range-diff, stash show -p, …
 

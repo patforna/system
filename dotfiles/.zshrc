@@ -59,7 +59,6 @@ alias rm='trash'              # move to macOS Trash instead of deleting (\rm for
 alias rg='rg --hidden --smart-case'
 alias g='rg'
 alias grep='rg'
-alias vim='nvim'
 alias lg='lazygit'
 alias md='macdown'
 
@@ -140,7 +139,7 @@ alias jb='just backlog'
 alias jc='just check'
 
 # --- Misc ---
-export EDITOR="nvim"
+export EDITOR="vim"
 export CLAUDE_CODE_MAX_OUTPUT_TOKENS=64000
 
 

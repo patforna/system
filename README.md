@@ -15,13 +15,13 @@ Brewfile               # brew packages, casks, VS Code extensions, uv tools, Mac
 
 ## Stack
 
-**Terminal:** Ghostty, zsh, tmux, starship, neovim
+**Terminal:** Ghostty, zsh, tmux, starship, vim
 
 **Tools:** ripgrep, fd, fzf, eza, bat, delta, lazygit, zoxide, atuin, btop
 
 **Automation:** Dagu (executor) + a level-triggered reconciler — drift checks, backups, watchdog, digests
 
-**Editors:** VS Code, neovim for quick edits
+**Editors:** VS Code, vim for quick edits
 
 **AI:** Claude Code
 

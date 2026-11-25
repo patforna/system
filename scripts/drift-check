@@ -598,7 +598,7 @@ run_remote_checks() {
   git_drift_count=${#DRIFT[@]}
 
   # Strip comments, blank lines, credential sections, and signing block
-  git_filter='^\s*$|^#|^\[credential|helper|gpgsign|gpg'
+  git_filter='^\s*$|^#|^\[credential|helper|gpgsign|gpg|editor'
   mac_git=$(grep -vE "$git_filter" "${DOTFILES}/.gitconfig" | strip_comments | sort)
   remote_git=$(grep -vE "$git_filter" "${REMOTE}/gitconfig" | strip_comments | sort)
 
