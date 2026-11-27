@@ -1,0 +1,12 @@
+#!/usr/bin/env zsh
+# Clean Claude Code profile (e.g. for live pairing interviews). Kit (source of truth, linked in as the /bootstrap skill): ~/github/claude-vanilla, github.com/patforna/claude-vanilla
+export CLAUDE_CONFIG_DIR="$HOME/.claude-vanilla"
+export ENABLE_CLAUDEAI_MCP_SERVERS=false
+export CLAUDE_CODE_DISABLE_AUTO_MEMORY=1
+export DISABLE_AUTOUPDATER=1
+mkdir -p "$CLAUDE_CONFIG_DIR/skills" && ln -sfn "$HOME/github/claude-vanilla" "$CLAUDE_CONFIG_DIR/skills/bootstrap"
+devtools='{"mcpServers":{"chrome-devtools":{"command":"npx","args":["-y","chrome-devtools-mcp@1.1.1","--isolated"]}}}'
+settings='{"statusLine":{"type":"command","command":"/bin/bash $HOME/.claude/statusline-command.sh","padding":0}}'
+exec claude --strict-mcp-config --mcp-config "$devtools" --settings "$settings" --chrome \
+  --model opus --effort high --fallback-model sonnet \
+  --dangerously-skip-permissions "$@"

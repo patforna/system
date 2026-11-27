@@ -86,6 +86,7 @@ Usage data is fetched from Anthropic's OAuth endpoint using Claude Code's own cr
 | `claude-replay`       | Extract a Claude Code session transcript into readable markdown — full subagent prompts/responses, main-thread text, and Bash calls, no TUI truncation. UUIDs resolve globally, so `claude-replay <uuid>` works from any directory; with no arg, falls back to the latest session in the cwd's project. Use `--list` to browse, `--commit <hash>` to locate a session via `find-session`. |
 | `drift-check`         | Detect untracked system state and Mac ↔ Linux config divergence. Two surfaces: `--local` (Brewfile, casks, apps, symlinks…) runs roughly weekly via the reconciler as an informational nudge; `--remote` (Mac dotfiles vs `remote/`) runs as a gate in `dev-up`/`bootstrap.sh`. No mode = both. `--notify` emails the list and exits 0 (no autofix) — and only when the drift set changed since the last notification; otherwise exits 1 on drift. |
 | `dev-up` / `dev-down` | Bring the remote dev droplet up/down and sync local SSH config. |
+| `claude-vanilla`      | Clean Claude Code for live AI pairing interviews: separate profile in `~/.claude-vanilla`, no global CLAUDE.md, memory, plugins or connectors. Links the kit repo [`claude-vanilla`](../claude-vanilla) (`/bootstrap` skill and repo templates) into the profile on every start; setup and usage are in that repo's README. |
 
 ## Dagu workflows
 
