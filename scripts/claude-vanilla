@@ -6,7 +6,8 @@ export CLAUDE_CODE_DISABLE_AUTO_MEMORY=1
 export DISABLE_AUTOUPDATER=1
 mkdir -p "$CLAUDE_CONFIG_DIR/skills" && ln -sfn "$HOME/github/claude-vanilla" "$CLAUDE_CONFIG_DIR/skills/bootstrap"
 devtools='{"mcpServers":{"chrome-devtools":{"command":"npx","args":["-y","chrome-devtools-mcp@1.1.1","--isolated"]}}}'
-settings='{"statusLine":{"type":"command","command":"/bin/bash $HOME/.claude/statusline-command.sh","padding":0}}'
+# claudeMdExcludes: any folder under $HOME would otherwise pick up ~/.claude/CLAUDE.md as an ancestor's project memory
+settings="{\"claudeMdExcludes\":[\"$HOME/.claude/**\"],\"statusLine\":{\"type\":\"command\",\"command\":\"/bin/bash $HOME/.claude/statusline-command.sh\",\"padding\":0}}"
 exec claude --strict-mcp-config --mcp-config "$devtools" --settings "$settings" --chrome \
   --model opus --effort high --fallback-model sonnet \
   --dangerously-skip-permissions "$@"
